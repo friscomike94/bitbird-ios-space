@@ -16,7 +16,7 @@
 
 const W = 480, H = 640;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function starPoints(cx, cy, r, inner, n = 5) {
   if (inner == null) inner = r * 0.42;
@@ -29,13 +29,32 @@ function starPoints(cx, cy, r, inner, n = 5) {
   return pts;
 }
 
-function hi() { return parseInt(localStorage.getItem('spaceJumpHi') || '0'); }
-function setHi(v) { localStorage.setItem('spaceJumpHi', v); }
+function hi()    { return parseInt(localStorage.getItem('spaceJumpHi') || '0'); }
+function setHi(v){ localStorage.setItem('spaceJumpHi', v); }
 
 // ── BootScene ─────────────────────────────────────────────────────────────────
 
 class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
+
+  preload() {
+    this.load.audio('bgm',         'sounds/bgm.mp3');
+    this.load.audio('sfx_collect', 'sounds/sfx_collect.mp3');
+    this.load.audio('sfx_hit',     'sounds/sfx_hit.mp3');
+    this.load.audio('sfx_score',   'sounds/sfx_score.mp3');
+    this.load.audio('sfx_thrust',  'sounds/sfx_thrust.mp3');
+    this.load.audio('sfx_start',   'sounds/sfx_start.mp3');
+
+    // Loading bar
+    const bar = this.add.rectangle(W/2, H/2, 0, 18, 0x00eeff);
+    const bg  = this.add.rectangle(W/2, H/2, W*0.6, 22, 0x112233);
+    bg.setDepth(0); bar.setDepth(1);
+    this.add.text(W/2, H/2 - 36, 'LOADING...', {
+      fontSize: '16px', fontFamily: 'monospace', color: '#556677',
+    }).setOrigin(0.5).setDepth(2);
+
+    this.load.on('progress', v => { bar.width = W * 0.6 * v; });
+  }
 
   create() {
     // Player: sleek spaceship (48×24)
@@ -50,7 +69,7 @@ class BootScene extends Phaser.Scene {
     pg.generateTexture('player', 48, 24);
     pg.destroy();
 
-    // Thruster particle (8×8 cyan dot)
+    // Thruster particle
     const tg = this.make.graphics({ add: false });
     tg.fillStyle(0x00ddff); tg.fillCircle(4, 4, 4);
     tg.generateTexture('thruster', 8, 8);
@@ -64,7 +83,7 @@ class BootScene extends Phaser.Scene {
     sg.generateTexture('star', 24, 24);
     sg.destroy();
 
-    // Pipe segment (80×40) — tiled to form columns
+    // Pipe segment (80×40)
     const rpg = this.make.graphics({ add: false });
     rpg.fillStyle(0x1e2c3e); rpg.fillRect(0, 0, 80, 40);
     rpg.fillStyle(0x2e3f55, 0.8); rpg.fillEllipse(18, 10, 34, 22);
@@ -78,13 +97,11 @@ class BootScene extends Phaser.Scene {
     // Background star dots
     const b1 = this.make.graphics({ add: false });
     b1.fillStyle(0xffffff); b1.fillCircle(2, 2, 2);
-    b1.generateTexture('bgs', 4, 4);
-    b1.destroy();
+    b1.generateTexture('bgs', 4, 4); b1.destroy();
 
     const b2 = this.make.graphics({ add: false });
     b2.fillStyle(0xaaccff); b2.fillCircle(3, 3, 3);
-    b2.generateTexture('bgm', 6, 6);
-    b2.destroy();
+    b2.generateTexture('bgm', 6, 6); b2.destroy();
 
     // Planet (80×80)
     const plg = this.make.graphics({ add: false });
@@ -93,8 +110,7 @@ class BootScene extends Phaser.Scene {
     plg.fillStyle(0x2b4880);     plg.fillEllipse(32, 32, 36, 20);
     plg.fillStyle(0x243c6a);     plg.fillEllipse(50, 48, 26, 16);
     plg.fillStyle(0x6090c0, 0.4); plg.fillEllipse(29, 28, 14, 9);
-    plg.generateTexture('planet', 80, 80);
-    plg.destroy();
+    plg.generateTexture('planet', 80, 80); plg.destroy();
 
     this.scene.start('Menu');
   }
@@ -109,6 +125,11 @@ class MenuScene extends Phaser.Scene {
     this._bgStars = [];
     this._makeBg();
 
+    // Start BGM
+    if (!this.sound.get('bgm') || !this.sound.get('bgm').isPlaying) {
+      this.sound.play('bgm', { loop: true, volume: 0.55 });
+    }
+
     this.add.image(W * 0.78, H * 0.28, 'planet').setScale(1.6).setAlpha(0.5);
 
     const title = this.add.text(W / 2, H * 0.22, 'SPACE\nJUMP', {
@@ -121,29 +142,33 @@ class MenuScene extends Phaser.Scene {
       fontSize: '13px', fontFamily: 'monospace', color: '#557799',
     }).setOrigin(0.5);
 
-    const sub = this.add.text(W / 2, H * 0.55, '▶  HOLD TO FLY', {
-      fontSize: '16px', fontFamily: 'monospace', color: '#88aacc',
+    this.add.text(W / 2, H * 0.52, '▶  HOLD TO FLY', {
+      fontSize: '15px', fontFamily: 'monospace', color: '#88aacc',
     }).setOrigin(0.5);
 
-    const btn = this.add.text(W / 2, H * 0.65, 'TAP TO START', {
+    const btn = this.add.text(W / 2, H * 0.64, 'TAP TO START', {
       fontSize: '26px', fontFamily: 'monospace', color: '#ffffff',
       stroke: '#003366', strokeThickness: 5,
-      padding: { x: 20, y: 10 }
     }).setOrigin(0.5);
 
     this.tweens.add({ targets: btn, alpha: 0.15, duration: 750, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.add.text(W / 2, H * 0.78, `BEST: ${hi()}`, {
+    this.add.text(W / 2, H * 0.77, `BEST: ${hi()}`, {
       fontSize: '17px', fontFamily: 'monospace', color: '#ffcc44',
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, H * 0.92, '↑ hold mouse / touch / SPACE to thrust', {
+    this.add.text(W / 2, H * 0.92, 'hold mouse / touch / SPACE  to thrust', {
       fontSize: '11px', fontFamily: 'monospace', color: '#334455',
     }).setOrigin(0.5);
 
-    this.input.once('pointerdown', () => this.scene.start('Game'));
-    this.input.keyboard.once('keydown-SPACE', () => this.scene.start('Game'));
+    this.input.once('pointerdown', () => this._start());
+    this.input.keyboard.once('keydown-SPACE', () => this._start());
+  }
+
+  _start() {
+    this.sound.play('sfx_start', { volume: 0.8 });
+    this.scene.start('Game');
   }
 
   _makeBg() {
@@ -168,13 +193,14 @@ class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
   create() {
-    this._score   = 0;
-    this._alive   = true;
-    this._speed   = 210;
-    this._gap     = 178;
-    this._dist    = 0;
-    this._nextPipe = 2000; // ms until first pipe
+    this._score    = 0;
+    this._alive    = true;
+    this._speed    = 155;   // ← slower start
+    this._gap      = 220;   // ← bigger gap
+    this._dist     = 0;
+    this._nextPipe = 3200;  // ← more time before first obstacle
     this._elapsed  = 0;
+    this._wasThrust = false;
 
     // Background
     this._bgLayers = [];
@@ -186,16 +212,16 @@ class GameScene extends Phaser.Scene {
     ).setAlpha(0.3).setScale(Phaser.Math.FloatBetween(0.7, 1.8));
 
     // Physics groups
-    this._pipes  = this.physics.add.group({ allowGravity: false, runChildUpdate: false });
-    this._stars  = this.physics.add.group({ allowGravity: false });
+    this._pipes = this.physics.add.group({ allowGravity: false });
+    this._stars = this.physics.add.group({ allowGravity: false });
 
     // Player
     this._player = this.physics.add.image(W * 0.25, H * 0.5, 'player');
     this._player.setDepth(10);
-    this._player.body.gravity.y = 680;
-    this._player.body.maxVelocityY = 420;
+    this._player.body.gravity.y = 400;   // ← lower gravity = easier
+    this._player.body.maxVelocityY = 380;
 
-    // Thruster particles (Phaser 3.60 API)
+    // Thruster particles
     this._emitter = this.add.particles(0, 0, 'thruster', {
       angle:    { min: 160, max: 200 },
       speed:    { min: 40,  max: 100 },
@@ -207,14 +233,17 @@ class GameScene extends Phaser.Scene {
       emitting:  false,
     }).setDepth(9);
 
+    // Thrust loop sound (short SFX played on each thrust start)
+    this._thrustSound = null;
+
     // HUD
     this._scoreTxt = this.add.text(14, 14, 'SCORE: 0', {
       fontSize: '20px', fontFamily: 'monospace', color: '#00eeff',
       stroke: '#000820', strokeThickness: 4,
     }).setDepth(20);
 
-    this._speedTxt = this.add.text(W - 14, 14, '', {
-      fontSize: '13px', fontFamily: 'monospace', color: '#446688',
+    this._diffTxt = this.add.text(W - 14, 14, 'EASY', {
+      fontSize: '13px', fontFamily: 'monospace', color: '#335566',
     }).setDepth(20).setOrigin(1, 0);
 
     // Colliders
@@ -246,37 +275,36 @@ class GameScene extends Phaser.Scene {
   }
 
   _spawnPipe() {
-    const gapY = Phaser.Math.Between(
-      Math.ceil(this._gap / 2) + 35,
-      Math.floor(H - this._gap / 2) - 35
-    );
-    const topH = gapY - this._gap / 2;
-    const botH = H - gapY - this._gap / 2;
-    const x    = W + 50;
+    const margin = Math.ceil(this._gap / 2) + 30;
+    const gapY   = Phaser.Math.Between(margin, H - margin);
+    const topH   = gapY - this._gap / 2;
+    const botH   = H - gapY - this._gap / 2;
+    const x      = W + 50;
 
-    const mkPipe = (y, h, origin1) => {
-      const pipe = this.add.tileSprite(x, y, 80, Math.max(h, 4), 'pipe_seg').setOrigin(0.5, origin1);
+    const mkPipe = (y, h, originY) => {
+      const h2   = Math.max(h, 4);
+      const pipe = this.add.tileSprite(x, y, 80, h2, 'pipe_seg').setOrigin(0.5, originY);
       this.physics.add.existing(pipe, false);
       pipe.body.allowGravity = false;
       pipe.body.setVelocityX(-this._speed);
-      pipe.body.setSize(76, Math.max(h, 4));
+      pipe.body.setSize(74, h2);
       this._pipes.add(pipe);
       return pipe;
     };
 
-    const top = mkPipe(0, topH, 0);
-    top._primary = true;
-    top._scored  = false;
+    const top      = mkPipe(0, topH, 0);
+    top._primary   = true;
+    top._scored    = false;
     mkPipe(H, botH, 1);
 
-    // Star in gap (65% chance)
-    if (Math.random() < 0.65) {
-      const sy  = Phaser.Math.Between(gapY - ~~(this._gap * 0.3), gapY + ~~(this._gap * 0.3));
-      const st  = this.physics.add.image(x, sy, 'star').setDepth(5);
+    // Star in gap (55% chance)
+    if (Math.random() < 0.55) {
+      const sy = Phaser.Math.Between(gapY - ~~(this._gap * 0.28), gapY + ~~(this._gap * 0.28));
+      const st = this.physics.add.image(x, sy, 'star').setDepth(5);
       st.body.allowGravity = false;
       st.body.setVelocityX(-this._speed);
       this._stars.add(st);
-      this.tweens.add({ targets: st, y: sy - 7, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: st, y: sy - 8, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
   }
 
@@ -285,6 +313,7 @@ class GameScene extends Phaser.Scene {
     star.destroy();
     this._score += 3;
     this._scoreTxt.setText(`SCORE: ${this._score}`);
+    this.sound.play('sfx_collect', { volume: 0.7 });
     const lbl = this.add.text(x, y - 8, '+3', {
       fontSize: '15px', fontFamily: 'monospace', color: '#ffee44',
     }).setDepth(30);
@@ -295,6 +324,7 @@ class GameScene extends Phaser.Scene {
     if (!this._alive) return;
     this._alive = false;
     this._emitter.stop();
+    this.sound.play('sfx_hit', { volume: 0.9 });
 
     this.cameras.main.shake(280, 0.013);
     this.cameras.main.flash(180, 80, 30, 120);
@@ -308,6 +338,13 @@ class GameScene extends Phaser.Scene {
         this.scene.start('GameOver', { score: this._score, best });
       }
     });
+  }
+
+  _diffLabel() {
+    if (this._speed < 190) return 'EASY';
+    if (this._speed < 240) return 'NORMAL';
+    if (this._speed < 300) return 'HARD';
+    return 'INSANE';
   }
 
   update(_, delta) {
@@ -331,8 +368,14 @@ class GameScene extends Phaser.Scene {
     // Thrust
     const thrust = this._holding || this._space.isDown;
     if (thrust) {
-      this._player.body.velocity.y = Math.max(this._player.body.velocity.y - 980 * dt, -295);
+      this._player.body.velocity.y = Math.max(this._player.body.velocity.y - 820 * dt, -255);
     }
+
+    // Thrust sound: play once on rising edge
+    if (thrust && !this._wasThrust) {
+      this.sound.play('sfx_thrust', { volume: 0.4 });
+    }
+    this._wasThrust = thrust;
 
     // Emitter follows player
     this._emitter.setPosition(this._player.x - 26, this._player.y);
@@ -342,15 +385,16 @@ class GameScene extends Phaser.Scene {
     // Tilt
     this._player.angle = Phaser.Math.Clamp(this._player.body.velocity.y * 0.062, -28, 40);
 
-    // World bounds check (top & bottom)
+    // World bounds
     if (this._player.y <= 4 || this._player.y >= H - 4) { this._die(); return; }
 
     // Pipe spawning
     this._nextPipe -= delta;
     if (this._nextPipe <= 0) {
       this._spawnPipe();
-      const interval = Math.max(1650 - this._dist * 0.04, 950);
-      this._nextPipe = Phaser.Math.Between(~~(interval * 0.85), ~~(interval * 1.15));
+      // Gradually tighten interval but keep it generous
+      const base = Math.max(2000 - this._dist * 0.03, 1200);
+      this._nextPipe = Phaser.Math.Between(~~(base * 0.9), ~~(base * 1.1));
     }
 
     // Pipes: score + cleanup
@@ -362,6 +406,7 @@ class GameScene extends Phaser.Scene {
         p._scored = true;
         this._score += 1;
         this._scoreTxt.setText(`SCORE: ${this._score}`);
+        this.sound.play('sfx_score', { volume: 0.5 });
       }
     });
 
@@ -371,11 +416,11 @@ class GameScene extends Phaser.Scene {
       if (s.x < -40) s.destroy();
     });
 
-    // Progressive difficulty
-    this._speed = Math.min(210 + this._dist * 0.028, 400);
-    this._gap   = Math.max(178 - this._dist * 0.009, 128);
+    // Progressive difficulty — much gentler curve
+    this._speed = Math.min(155 + this._dist * 0.012, 300);  // ← max 300 (was 400)
+    this._gap   = Math.max(220 - this._dist * 0.004, 165);  // ← min 165 (was 128)
 
-    this._speedTxt.setText(`SPD ${~~this._speed}`);
+    this._diffTxt.setText(this._diffLabel());
   }
 }
 
@@ -408,12 +453,10 @@ class GameOverScene extends Phaser.Scene {
       fontSize: '38px', fontFamily: 'monospace', color: '#00eeff', align: 'center',
     }).setOrigin(0.5);
 
-    const bestTxt = isNew
-      ? `✦ NEW BEST: ${this._best} ✦`
-      : `BEST: ${this._best}`;
-    const bestCol = isNew ? '#ffee00' : '#556677';
+    const bestTxt = isNew ? `✦ NEW BEST: ${this._best} ✦` : `BEST: ${this._best}`;
     this.add.text(W / 2, H * 0.56, bestTxt, {
-      fontSize: '19px', fontFamily: 'monospace', color: bestCol,
+      fontSize: '19px', fontFamily: 'monospace',
+      color: isNew ? '#ffee00' : '#556677',
     }).setOrigin(0.5);
 
     const btn = this.add.text(W / 2, H * 0.70, '▶  TAP TO PLAY AGAIN', {
@@ -432,17 +475,14 @@ class GameOverScene extends Phaser.Scene {
   }
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Launch ────────────────────────────────────────────────────────────────────
 
 new Phaser.Game({
   type: Phaser.AUTO,
   width: W, height: H,
   backgroundColor: '#00000e',
   physics: { default: 'arcade', arcade: { debug: false } },
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-  },
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   scene: [BootScene, MenuScene, GameScene, GameOverScene],
 });
 </script>
