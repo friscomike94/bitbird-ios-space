@@ -15,7 +15,8 @@
 'use strict';
 
 const W = 640, H = 480;
-const BGM_KEYS = ['bgm', 'bgm2', 'bgm3', 'bgm4'];
+const BGM_KEYS  = ['bgm', 'bgm2', 'bgm3', 'bgm4'];
+const STAR_SFX  = ['sfx_collect', 'sfx_score', 'sfx_start'];
 
 function starPoints(cx, cy, r, inner, n = 5) {
   if (inner == null) inner = r * 0.42;
@@ -284,9 +285,9 @@ class MenuScene extends Phaser.Scene {
     this.add.image(W * 0.82, H * 0.42, 'planet').setScale(1.8).setAlpha(0.45);
 
     // 캐릭터 미리보기 + 글로우
-    const glow = this.add.rectangle(W * 0.15, H * 0.46, 70, 90, 0x00aaff, 0.08);
+    const glow = this.add.rectangle(W * 0.15, H * 0.46, 36, 46, 0x00aaff, 0.08);
     this.tweens.add({ targets: glow, alpha: 0.18, scaleX: 1.1, scaleY: 1.1, duration: 1200, yoyo: true, repeat: -1 });
-    this.add.image(W * 0.15, H * 0.46, 'player').setScale(2.2).setAlpha(0.9);
+    this.add.image(W * 0.15, H * 0.46, 'player').setScale(1.1).setAlpha(0.9);
 
     const title = this.add.text(W / 2, H * 0.18, 'SPACE JUMP', {
       fontSize: '54px', fontFamily: 'monospace', color: '#00eeff',
@@ -368,7 +369,7 @@ class GameScene extends Phaser.Scene {
     this._stars = this.physics.add.group({ allowGravity: false });
 
     // 플레이어
-    this._player = this.physics.add.image(W * 0.22, H * 0.5, 'player').setDepth(10);
+    this._player = this.physics.add.image(W * 0.22, H * 0.5, 'player').setScale(0.5).setDepth(10);
     this._player.body.gravity.y = 420;
     this._player.body.maxVelocityY = 370;
 
@@ -521,7 +522,8 @@ class GameScene extends Phaser.Scene {
     star.destroy();
     this._score += 3;
     this._scoreTxt.setText(`SCORE: ${this._score}`);
-    this.sound.play('sfx_collect', { volume: 0.75 });
+    const sfxKey = Phaser.Utils.Array.GetRandom(STAR_SFX);
+    this.sound.play(sfxKey, { volume: Phaser.Math.FloatBetween(0.55, 0.85), detune: Phaser.Math.Between(-150, 150) });
     const lbl = this.add.text(x, y - 6, '+3', {
       fontSize: '16px', fontFamily: 'monospace', color: '#ffee44',
     }).setDepth(30);
@@ -584,7 +586,7 @@ class GameScene extends Phaser.Scene {
     if (!thrust && this._thrustSnd.isPlaying)  this._thrustSnd.stop();
 
     // 파티클
-    this._emitter.setPosition(this._player.x - 20, this._player.y + 16);
+    this._emitter.setPosition(this._player.x - 10, this._player.y + 8);
     if (thrust && !this._emitter.emitting)  this._emitter.start();
     if (!thrust && this._emitter.emitting) this._emitter.stop();
 
@@ -668,7 +670,7 @@ class GameOverScene extends Phaser.Scene {
     const isNew = this._score > 0 && this._score >= this._best;
 
     // 캐릭터 (tilted)
-    this.add.image(W/2, H * 0.16, 'player').setScale(2.0).setAlpha(0.75).setAngle(18);
+    this.add.image(W/2, H * 0.16, 'player').setScale(1.0).setAlpha(0.75).setAngle(18);
 
     const go = this.add.text(W/2, H*0.32, 'GAME  OVER', {
       fontSize: '44px', fontFamily: 'monospace', color: '#ff4466',
