@@ -1,0 +1,6 @@
+framework module BuildboxAdIntegratorInterface {
+  umbrella header "BuildboxAdIntegratorInterface.h"
+
+  export *
+  module * { export * }
+}

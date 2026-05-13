@@ -1,0 +1,20 @@
+# Libraries (Cocos2d-x, too large to commit)
+ios/BBPlayer/libs/
+
+# Backup files from theme transformation
+*.bak
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Build
+build/

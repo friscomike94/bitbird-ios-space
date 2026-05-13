@@ -1,0 +1,6 @@
+framework module AOBSessionReporting {
+  umbrella header "AOBSessionReporting.h"
+
+  export *
+  module * { export * }
+}
