@@ -280,7 +280,8 @@ class MenuScene extends Phaser.Scene {
     this._bgStars = [];
     this._makeBg();
     this.sound.stopAll();
-    this.sound.play(Phaser.Utils.Array.GetRandom(BGM_KEYS), { loop: true, volume: 0.5 });
+    const playBgm = () => { if (!this.sound.getAll().some(s => s.isPlaying)) this.sound.play('bgm', { loop: true, volume: 0.5 }); };
+    if (this.sound.locked) this.sound.once('unlocked', playBgm); else playBgm();
 
     this.add.image(W * 0.82, H * 0.42, 'planet').setScale(1.8).setAlpha(0.45);
 
@@ -350,7 +351,8 @@ class GameScene extends Phaser.Scene {
     this._pairList  = [];  // 전자기장 아크 추적용
 
     if (!this.sound.getAll().some(s => s.isPlaying && BGM_KEYS.includes(s.key))) {
-      this.sound.play(Phaser.Utils.Array.GetRandom(BGM_KEYS), { loop: true, volume: 0.5 });
+      const playBgm = () => this.sound.play('bgm', { loop: true, volume: 0.5 });
+      if (this.sound.locked) this.sound.once('unlocked', playBgm); else playBgm();
     }
 
     // 배경
