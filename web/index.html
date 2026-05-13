@@ -14,23 +14,23 @@
 <script>
 'use strict';
 
-const W = 480, H = 640;
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── 가로 모드 ─────────────────────────────────────────────────────────────────
+const W = 640, H = 480;
+const BGM_KEYS = ['bgm', 'bgm2', 'bgm3', 'bgm4'];
 
 function starPoints(cx, cy, r, inner, n = 5) {
   if (inner == null) inner = r * 0.42;
   const pts = [];
   for (let i = 0; i < n * 2; i++) {
     const a = (i * Math.PI / n) - Math.PI / 2;
-    const radius = i % 2 === 0 ? r : inner;
-    pts.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius });
+    const rad = i % 2 === 0 ? r : inner;
+    pts.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad });
   }
   return pts;
 }
 
-function hi()    { return parseInt(localStorage.getItem('spaceJumpHi') || '0'); }
-function setHi(v){ localStorage.setItem('spaceJumpHi', v); }
+function hi()     { return parseInt(localStorage.getItem('spaceJumpHi') || '0'); }
+function setHi(v) { localStorage.setItem('spaceJumpHi', v); }
 
 // ── BootScene ─────────────────────────────────────────────────────────────────
 
@@ -38,81 +38,131 @@ class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
 
   preload() {
-    this.load.audio('bgm',         'sounds/bgm.mp3');
+    // BGM 4트랙
+    this.load.audio('bgm',  'sounds/bgm.mp3');
+    this.load.audio('bgm2', 'sounds/bgm2.mp3');
+    this.load.audio('bgm3', 'sounds/bgm3.mp3');
+    this.load.audio('bgm4', 'sounds/bgm4.mp3');
+    // SFX
     this.load.audio('sfx_collect', 'sounds/sfx_collect.mp3');
     this.load.audio('sfx_hit',     'sounds/sfx_hit.mp3');
     this.load.audio('sfx_score',   'sounds/sfx_score.mp3');
     this.load.audio('sfx_thrust',  'sounds/sfx_thrust.mp3');
     this.load.audio('sfx_start',   'sounds/sfx_start.mp3');
 
-    // Loading bar
-    const bar = this.add.rectangle(W/2, H/2, 0, 18, 0x00eeff);
-    const bg  = this.add.rectangle(W/2, H/2, W*0.6, 22, 0x112233);
-    bg.setDepth(0); bar.setDepth(1);
-    this.add.text(W/2, H/2 - 36, 'LOADING...', {
-      fontSize: '16px', fontFamily: 'monospace', color: '#556677',
+    // 로딩 바
+    const bar = this.add.rectangle(W/2, H/2, 0, 18, 0x00eeff).setDepth(1);
+    this.add.rectangle(W/2, H/2, W*0.55, 22, 0x112233).setDepth(0);
+    this.add.text(W/2, H/2-34, 'LOADING...', {
+      fontSize:'15px', fontFamily:'monospace', color:'#557799'
     }).setOrigin(0.5).setDepth(2);
-
-    this.load.on('progress', v => { bar.width = W * 0.6 * v; });
+    this.load.on('progress', v => { bar.width = W * 0.55 * v; });
   }
 
   create() {
-    // Player: sleek spaceship (48×24)
-    const pg = this.make.graphics({ add: false });
-    pg.fillStyle(0xd0e0f0); pg.fillEllipse(24, 12, 44, 20);
-    pg.fillStyle(0x40dfff); pg.fillEllipse(31, 10, 17, 13);
-    pg.fillStyle(0x8090a8);
-    pg.fillTriangle(16, 12, 28, 5, 28, 12);
-    pg.fillTriangle(16, 12, 28, 19, 28, 12);
-    pg.fillStyle(0x405060); pg.fillRect(2, 9, 10, 6);
-    pg.fillStyle(0x00ffee); pg.fillCircle(3, 12, 4);
-    pg.generateTexture('player', 48, 24);
-    pg.destroy();
-
-    // Thruster particle
-    const tg = this.make.graphics({ add: false });
-    tg.fillStyle(0x00ddff); tg.fillCircle(4, 4, 4);
-    tg.generateTexture('thruster', 8, 8);
-    tg.destroy();
-
-    // Star collectible (24×24)
-    const sg = this.make.graphics({ add: false });
-    sg.fillStyle(0xffdd00, 0.35); sg.fillCircle(12, 12, 11);
-    sg.fillStyle(0xffee44); sg.fillPoints(starPoints(12, 12, 10, 4.2), true);
-    sg.fillStyle(0xffffff, 0.9); sg.fillCircle(12, 12, 3);
-    sg.generateTexture('star', 24, 24);
-    sg.destroy();
-
-    // Pipe segment (80×40)
-    const rpg = this.make.graphics({ add: false });
-    rpg.fillStyle(0x1e2c3e); rpg.fillRect(0, 0, 80, 40);
-    rpg.fillStyle(0x2e3f55, 0.8); rpg.fillEllipse(18, 10, 34, 22);
-    rpg.fillStyle(0x2e3f55, 0.8); rpg.fillEllipse(58, 26, 36, 24);
-    rpg.fillStyle(0x131e2c, 0.9); rpg.fillEllipse(8, 32, 26, 16);
-    rpg.fillStyle(0x131e2c, 0.9); rpg.fillEllipse(66, 6, 28, 14);
-    rpg.lineStyle(1, 0x4a6080, 0.6); rpg.strokeRect(0, 0, 80, 40);
-    rpg.generateTexture('pipe_seg', 80, 40);
-    rpg.destroy();
-
-    // Background star dots
-    const b1 = this.make.graphics({ add: false });
-    b1.fillStyle(0xffffff); b1.fillCircle(2, 2, 2);
-    b1.generateTexture('bgs', 4, 4); b1.destroy();
-
-    const b2 = this.make.graphics({ add: false });
-    b2.fillStyle(0xaaccff); b2.fillCircle(3, 3, 3);
-    b2.generateTexture('bgm', 6, 6); b2.destroy();
-
-    // Planet (80×80)
-    const plg = this.make.graphics({ add: false });
-    plg.fillStyle(0x1a3060, 0.4); plg.fillCircle(40, 40, 38);
-    plg.fillStyle(0x1a3060);     plg.fillCircle(40, 40, 32);
-    plg.fillStyle(0x2b4880);     plg.fillEllipse(32, 32, 36, 20);
-    plg.fillStyle(0x243c6a);     plg.fillEllipse(50, 48, 26, 16);
-    plg.fillStyle(0x6090c0, 0.4); plg.fillEllipse(29, 28, 14, 9);
-    plg.generateTexture('planet', 80, 80); plg.destroy();
-
+    this._makePlayer();
+    this._makeThruster();
+    this._makeStar();
+    this._makePipe();
+    this._makeBgDots();
+    this._makePlanet();
     this.scene.start('Menu');
+  }
+
+  // ── 원본 오리 우주인 캐릭터 (42×48) ─────────────────────────────────────
+  _makePlayer() {
+    const g = this.make.graphics({ add: false });
+
+    // 제트팩 (왼쪽/뒤)
+    g.fillStyle(0x2a3548); g.fillRect(0, 8, 10, 26);
+    g.fillStyle(0x1c2635); g.fillRect(2, 32, 6, 5);  // 노즐
+    g.fillStyle(0x00eeff, 0.9); g.fillRect(3, 36, 4, 4); // 불꽃
+    g.fillStyle(0x0088cc, 0.6); g.fillRect(3, 40, 4, 3);
+
+    // 몸통 (수트)
+    g.fillStyle(0x2e5e78); g.fillRect(10, 22, 26, 20);
+    g.fillStyle(0x3a7090); g.fillRect(12, 26, 22, 3);  // 수트 라인
+    g.fillStyle(0x3a7090); g.fillRect(12, 31, 22, 3);
+    g.fillStyle(0xffcc00); g.fillRect(22, 24, 5, 5);   // 배지
+
+    // 머리 (헬멧 - 오리 형태)
+    g.fillStyle(0x3d6880); g.fillRect(10, 2, 26, 22);
+    // 헬멧 바이저 (청록 투명)
+    g.fillStyle(0x00ccff, 0.75); g.fillRect(12, 7, 20, 11);
+    // 바이저 반사광
+    g.fillStyle(0xffffff, 0.4); g.fillRect(13, 8, 7, 4);
+    // 부리 (오리)
+    g.fillStyle(0xff9930); g.fillRect(34, 12, 8, 6);
+    g.fillStyle(0xffaa40); g.fillRect(35, 12, 6, 3);
+    // 눈 (바이저 뒤)
+    g.fillStyle(0x001122); g.fillRect(28, 9, 4, 4);
+    g.fillStyle(0xffffff, 0.6); g.fillRect(28, 9, 2, 2); // 눈 하이라이트
+    // 헬멧 안테나
+    g.fillStyle(0x88aacc); g.fillRect(20, 0, 3, 4);
+    g.fillStyle(0xff4444); g.fillRect(20, 0, 3, 2);
+
+    // 다리
+    g.fillStyle(0x264858); g.fillRect(14, 42, 8, 6);
+    g.fillStyle(0x264858); g.fillRect(26, 42, 8, 6);
+
+    g.generateTexture('player', 42, 48);
+    g.destroy();
+  }
+
+  _makeThruster() {
+    const g = this.make.graphics({ add: false });
+    // 시안 글로우 파티클
+    g.fillStyle(0x00eeff); g.fillCircle(4, 4, 4);
+    g.generateTexture('thruster', 8, 8);
+    g.destroy();
+  }
+
+  _makeStar() {
+    const g = this.make.graphics({ add: false });
+    g.fillStyle(0xffdd00, 0.3); g.fillCircle(12, 12, 11);
+    g.fillStyle(0xffee44); g.fillPoints(starPoints(12, 12, 10, 4), true);
+    g.fillStyle(0xffffff, 0.85); g.fillCircle(12, 12, 3);
+    g.generateTexture('star', 24, 24);
+    g.destroy();
+  }
+
+  _makePipe() {
+    const g = this.make.graphics({ add: false });
+    g.fillStyle(0x1a2838); g.fillRect(0, 0, 82, 40);
+    g.fillStyle(0x28405a, 0.85); g.fillEllipse(20, 12, 36, 22);
+    g.fillStyle(0x28405a, 0.85); g.fillEllipse(60, 26, 38, 24);
+    g.fillStyle(0x10192a, 0.9);  g.fillEllipse(8, 32, 28, 16);
+    g.fillStyle(0x10192a, 0.9);  g.fillEllipse(70, 6, 28, 14);
+    // 소행성 표면 크레이터
+    g.fillStyle(0x0d1620, 0.7);  g.fillCircle(42, 20, 8);
+    g.fillStyle(0x0d1620, 0.5);  g.fillCircle(15, 28, 5);
+    g.lineStyle(1, 0x3a5570, 0.5); g.strokeRect(0, 0, 82, 40);
+    g.generateTexture('pipe_seg', 82, 40);
+    g.destroy();
+  }
+
+  _makeBgDots() {
+    const g1 = this.make.graphics({ add: false });
+    g1.fillStyle(0xffffff); g1.fillCircle(2, 2, 2);
+    g1.generateTexture('bgs', 4, 4); g1.destroy();
+
+    const g2 = this.make.graphics({ add: false });
+    g2.fillStyle(0xaaccff); g2.fillCircle(3, 3, 3);
+    g2.generateTexture('bgm_dot', 6, 6); g2.destroy();
+  }
+
+  _makePlanet() {
+    const g = this.make.graphics({ add: false });
+    g.fillStyle(0x1a3060, 0.35); g.fillCircle(40, 40, 38);
+    g.fillStyle(0x1a3060);       g.fillCircle(40, 40, 32);
+    g.fillStyle(0x2b4880);       g.fillEllipse(32, 30, 38, 22);
+    g.fillStyle(0x243c6a);       g.fillEllipse(50, 50, 26, 14);
+    g.fillStyle(0x6090c0, 0.35); g.fillEllipse(27, 26, 16, 9);
+    // 링 (토성 스타일)
+    g.lineStyle(3, 0x4a70a0, 0.4);
+    g.strokeEllipse(40, 40, 88, 22);
+    g.generateTexture('planet', 80, 80);
+    g.destroy();
   }
 }
 
@@ -125,41 +175,40 @@ class MenuScene extends Phaser.Scene {
     this._bgStars = [];
     this._makeBg();
 
-    // Start BGM
-    if (!this.sound.get('bgm') || !this.sound.get('bgm').isPlaying) {
-      this.sound.play('bgm', { loop: true, volume: 0.55 });
-    }
+    // BGM 시작 (랜덤 트랙)
+    this.sound.stopAll();
+    const track = Phaser.Utils.Array.GetRandom(BGM_KEYS);
+    this.sound.play(track, { loop: true, volume: 0.5 });
 
-    this.add.image(W * 0.78, H * 0.28, 'planet').setScale(1.6).setAlpha(0.5);
+    this.add.image(W * 0.82, H * 0.42, 'planet').setScale(1.8).setAlpha(0.45);
 
-    const title = this.add.text(W / 2, H * 0.22, 'SPACE\nJUMP', {
-      fontSize: '62px', fontFamily: 'monospace', color: '#00eeff',
-      align: 'center', stroke: '#002244', strokeThickness: 7,
-      shadow: { offsetX: 0, offsetY: 0, color: '#00aaff', blur: 22, fill: true }
+    // 캐릭터 미리보기
+    this.add.image(W * 0.18, H * 0.45, 'player').setScale(2.5).setAlpha(0.85);
+
+    const title = this.add.text(W / 2, H * 0.20, 'SPACE JUMP', {
+      fontSize: '54px', fontFamily: 'monospace', color: '#00eeff',
+      stroke: '#002244', strokeThickness: 7,
+      shadow: { offsetX: 0, offsetY: 0, color: '#00aaff', blur: 20, fill: true }
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, H * 0.44, 'JETPACK EDITION', {
-      fontSize: '13px', fontFamily: 'monospace', color: '#557799',
+    this.add.text(W / 2, H * 0.35, 'JETPACK  DUCK  EDITION', {
+      fontSize: '13px', fontFamily: 'monospace', color: '#446688', letterSpacing: 3,
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, H * 0.52, '▶  HOLD TO FLY', {
-      fontSize: '15px', fontFamily: 'monospace', color: '#88aacc',
+    this.add.text(W / 2, H * 0.47, '▶  HOLD to fly  |  RELEASE to fall', {
+      fontSize: '14px', fontFamily: 'monospace', color: '#88aacc',
     }).setOrigin(0.5);
 
-    const btn = this.add.text(W / 2, H * 0.64, 'TAP TO START', {
-      fontSize: '26px', fontFamily: 'monospace', color: '#ffffff',
+    const btn = this.add.text(W / 2, H * 0.60, 'TAP  TO  START', {
+      fontSize: '28px', fontFamily: 'monospace', color: '#ffffff',
       stroke: '#003366', strokeThickness: 5,
     }).setOrigin(0.5);
 
-    this.tweens.add({ targets: btn, alpha: 0.15, duration: 750, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.tweens.add({ targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: btn,   alpha: 0.12, duration: 750, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: title, scaleX: 1.03, scaleY: 1.03, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.add.text(W / 2, H * 0.77, `BEST: ${hi()}`, {
-      fontSize: '17px', fontFamily: 'monospace', color: '#ffcc44',
-    }).setOrigin(0.5);
-
-    this.add.text(W / 2, H * 0.92, 'hold mouse / touch / SPACE  to thrust', {
-      fontSize: '11px', fontFamily: 'monospace', color: '#334455',
+    this.add.text(W / 2, H * 0.78, `BEST: ${hi()}`, {
+      fontSize: '18px', fontFamily: 'monospace', color: '#ffcc44',
     }).setOrigin(0.5);
 
     this.input.once('pointerdown', () => this._start());
@@ -167,17 +216,17 @@ class MenuScene extends Phaser.Scene {
   }
 
   _start() {
-    this.sound.play('sfx_start', { volume: 0.8 });
+    this.sound.play('sfx_start', { volume: 0.75 });
     this.scene.start('Game');
   }
 
   _makeBg() {
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 150; i++) {
       const s = this.add.image(
         Phaser.Math.Between(0, W), Phaser.Math.Between(0, H),
-        Math.random() < 0.75 ? 'bgs' : 'bgm'
+        Math.random() < 0.75 ? 'bgs' : 'bgm_dot'
       ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.9));
-      s._spd = Phaser.Math.FloatBetween(0.05, 0.3);
+      s._spd = Phaser.Math.FloatBetween(0.05, 0.28);
       this._bgStars.push(s);
     }
   }
@@ -193,64 +242,67 @@ class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
   create() {
-    this._score    = 0;
-    this._alive    = true;
-    this._speed    = 155;   // ← slower start
-    this._gap      = 220;   // ← bigger gap
-    this._dist     = 0;
-    this._nextPipe = 3200;  // ← more time before first obstacle
-    this._elapsed  = 0;
+    this._score     = 0;
+    this._alive     = true;
+    this._speed     = 160;
+    this._gap       = 210;
+    this._dist      = 0;
+    this._nextPipe  = 3000;
     this._wasThrust = false;
 
-    // Background
+    // BGM 랜덤 (이미 재생 중이면 유지)
+    if (!this.sound.getAll().some(s => s.isPlaying && BGM_KEYS.includes(s.key))) {
+      this.sound.play(Phaser.Utils.Array.GetRandom(BGM_KEYS), { loop: true, volume: 0.5 });
+    }
+
+    // 배경
     this._bgLayers = [];
     this._makeBgLayers();
     this._planet = this.add.image(
-      Phaser.Math.Between(W * 0.5, W * 0.95),
-      Phaser.Math.Between(H * 0.05, H * 0.55),
+      Phaser.Math.Between(W * 0.55, W * 0.92),
+      Phaser.Math.Between(H * 0.08, H * 0.88),
       'planet'
-    ).setAlpha(0.3).setScale(Phaser.Math.FloatBetween(0.7, 1.8));
+    ).setAlpha(0.28).setScale(Phaser.Math.FloatBetween(0.6, 1.6));
 
-    // Physics groups
+    // 물리 그룹
     this._pipes = this.physics.add.group({ allowGravity: false });
     this._stars = this.physics.add.group({ allowGravity: false });
 
-    // Player
-    this._player = this.physics.add.image(W * 0.25, H * 0.5, 'player');
-    this._player.setDepth(10);
-    this._player.body.gravity.y = 400;   // ← lower gravity = easier
-    this._player.body.maxVelocityY = 380;
+    // 플레이어
+    this._player = this.physics.add.image(W * 0.22, H * 0.5, 'player').setDepth(10);
+    this._player.body.gravity.y = 420;
+    this._player.body.maxVelocityY = 370;
 
-    // Thruster particles
+    // 제트팩 파티클
     this._emitter = this.add.particles(0, 0, 'thruster', {
-      angle:    { min: 160, max: 200 },
-      speed:    { min: 40,  max: 100 },
-      scale:    { start: 0.9, end: 0 },
+      angle:    { min: 155, max: 205 },
+      speed:    { min: 50, max: 110 },
+      scale:    { start: 1.0, end: 0 },
       alpha:    { start: 1,   end: 0 },
-      tint:     [0x00ffff, 0x0088ff, 0x0044bb],
-      lifespan: 180,
-      frequency: 25,
+      tint:     [0x00ffff, 0x0055ff, 0x00aaff, 0x00eebb],
+      lifespan: 190,
+      frequency: 22,
       emitting:  false,
     }).setDepth(9);
 
-    // Thrust loop sound (short SFX played on each thrust start)
-    this._thrustSound = null;
+    // 제트팩 사운드 (루프)
+    this._thrustSnd = this.sound.add('sfx_thrust', { loop: true, volume: 0.3 });
 
     // HUD
-    this._scoreTxt = this.add.text(14, 14, 'SCORE: 0', {
+    this._scoreTxt = this.add.text(14, 12, 'SCORE: 0', {
       fontSize: '20px', fontFamily: 'monospace', color: '#00eeff',
       stroke: '#000820', strokeThickness: 4,
     }).setDepth(20);
 
-    this._diffTxt = this.add.text(W - 14, 14, 'EASY', {
-      fontSize: '13px', fontFamily: 'monospace', color: '#335566',
+    this._diffTxt = this.add.text(W - 14, 12, 'EASY', {
+      fontSize: '14px', fontFamily: 'monospace', color: '#3a5568',
     }).setDepth(20).setOrigin(1, 0);
 
-    // Colliders
-    this.physics.add.overlap(this._player, this._pipes,  this._die,     null, this);
-    this.physics.add.overlap(this._player, this._stars,  this._getStar, null, this);
+    // 충돌
+    this.physics.add.overlap(this._player, this._pipes, this._die,    null, this);
+    this.physics.add.overlap(this._player, this._stars, this._getStar, null, this);
 
-    // Input
+    // 입력
     this._holding = false;
     this.input.on('pointerdown', () => { this._holding = true;  });
     this.input.on('pointerup',   () => { this._holding = false; });
@@ -258,12 +310,11 @@ class GameScene extends Phaser.Scene {
   }
 
   _makeBgLayers() {
-    const defs = [
-      { n: 80, spd: 0.15, key: 'bgs', aRange: [0.15, 0.45] },
-      { n: 40, spd: 0.35, key: 'bgs', aRange: [0.4,  0.75] },
-      { n: 18, spd: 0.70, key: 'bgm', aRange: [0.5,  1.0 ] },
-    ];
-    defs.forEach(d => {
+    [
+      { n: 90, spd: 0.12, key: 'bgs',     aRange: [0.12, 0.40] },
+      { n: 45, spd: 0.32, key: 'bgs',     aRange: [0.35, 0.70] },
+      { n: 20, spd: 0.65, key: 'bgm_dot', aRange: [0.45, 0.95] },
+    ].forEach(d => {
       for (let i = 0; i < d.n; i++) {
         const s = this.add.image(
           Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), d.key
@@ -275,15 +326,15 @@ class GameScene extends Phaser.Scene {
   }
 
   _spawnPipe() {
-    const margin = Math.ceil(this._gap / 2) + 30;
+    const margin = Math.ceil(this._gap / 2) + 28;
     const gapY   = Phaser.Math.Between(margin, H - margin);
     const topH   = gapY - this._gap / 2;
     const botH   = H - gapY - this._gap / 2;
-    const x      = W + 50;
+    const x      = W + 55;
 
-    const mkPipe = (y, h, originY) => {
+    const mkPipe = (y, h, oy) => {
       const h2   = Math.max(h, 4);
-      const pipe = this.add.tileSprite(x, y, 80, h2, 'pipe_seg').setOrigin(0.5, originY);
+      const pipe = this.add.tileSprite(x, y, 82, h2, 'pipe_seg').setOrigin(0.5, oy);
       this.physics.add.existing(pipe, false);
       pipe.body.allowGravity = false;
       pipe.body.setVelocityX(-this._speed);
@@ -292,46 +343,50 @@ class GameScene extends Phaser.Scene {
       return pipe;
     };
 
-    const top      = mkPipe(0, topH, 0);
-    top._primary   = true;
-    top._scored    = false;
+    const top    = mkPipe(0, topH, 0);
+    top._primary = true;
+    top._scored  = false;
     mkPipe(H, botH, 1);
 
-    // Star in gap (55% chance)
-    if (Math.random() < 0.55) {
-      const sy = Phaser.Math.Between(gapY - ~~(this._gap * 0.28), gapY + ~~(this._gap * 0.28));
+    // 별 수집물
+    if (Math.random() < 0.60) {
+      const sy = Phaser.Math.Between(
+        gapY - ~~(this._gap * 0.30),
+        gapY + ~~(this._gap * 0.30)
+      );
       const st = this.physics.add.image(x, sy, 'star').setDepth(5);
       st.body.allowGravity = false;
       st.body.setVelocityX(-this._speed);
       this._stars.add(st);
-      this.tweens.add({ targets: st, y: sy - 8, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: st, y: sy - 9, duration: 580, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
   }
 
-  _getStar(player, star) {
-    const x = star.x, y = star.y;
+  _getStar(_, star) {
+    const { x, y } = star;
     star.destroy();
     this._score += 3;
     this._scoreTxt.setText(`SCORE: ${this._score}`);
-    this.sound.play('sfx_collect', { volume: 0.7 });
-    const lbl = this.add.text(x, y - 8, '+3', {
-      fontSize: '15px', fontFamily: 'monospace', color: '#ffee44',
+    this.sound.play('sfx_collect', { volume: 0.75 });
+    const lbl = this.add.text(x, y - 6, '+3', {
+      fontSize: '16px', fontFamily: 'monospace', color: '#ffee44',
     }).setDepth(30);
-    this.tweens.add({ targets: lbl, y: y - 36, alpha: 0, duration: 550, onComplete: () => lbl.destroy() });
+    this.tweens.add({ targets: lbl, y: y - 40, alpha: 0, duration: 560, onComplete: () => lbl.destroy() });
   }
 
   _die() {
     if (!this._alive) return;
     this._alive = false;
     this._emitter.stop();
-    this.sound.play('sfx_hit', { volume: 0.9 });
+    if (this._thrustSnd.isPlaying) this._thrustSnd.stop();
+    this.sound.play('sfx_hit', { volume: 0.95 });
 
-    this.cameras.main.shake(280, 0.013);
-    this.cameras.main.flash(180, 80, 30, 120);
+    this.cameras.main.shake(300, 0.014);
+    this.cameras.main.flash(200, 90, 30, 130);
 
     this.tweens.add({
-      targets: this._player, alpha: 0, angle: 200, scaleX: 2.2, scaleY: 2.2,
-      duration: 380,
+      targets: this._player, alpha: 0, angle: 220, scaleX: 2.3, scaleY: 2.3,
+      duration: 400,
       onComplete: () => {
         const best = Math.max(this._score, hi());
         setHi(best);
@@ -341,84 +396,81 @@ class GameScene extends Phaser.Scene {
   }
 
   _diffLabel() {
-    if (this._speed < 190) return 'EASY';
-    if (this._speed < 240) return 'NORMAL';
-    if (this._speed < 300) return 'HARD';
-    return 'INSANE';
+    const s = this._speed;
+    if (s < 200) return 'EASY';
+    if (s < 245) return 'NORMAL';
+    if (s < 285) return 'HARD';
+    return '🔥 INSANE';
   }
 
   update(_, delta) {
     if (!this._alive) return;
 
     const dt = delta / 1000;
-    this._elapsed += delta;
-    this._dist    += this._speed * dt;
+    this._dist += this._speed * dt;
 
-    // Scroll bg
+    // 배경 스크롤
     this._bgLayers.forEach(s => {
-      s.x -= s._spd * this._speed * dt * 0.45;
+      s.x -= s._spd * this._speed * dt * 0.40;
       if (s.x < -8) s.x = W + 8;
     });
-    this._planet.x -= this._speed * dt * 0.018;
-    if (this._planet.x < -100) {
-      this._planet.x = W + 100;
-      this._planet.y = Phaser.Math.Between(H * 0.05, H * 0.55);
+    this._planet.x -= this._speed * dt * 0.015;
+    if (this._planet.x < -120) {
+      this._planet.x = W + 120;
+      this._planet.y = Phaser.Math.Between(H * 0.08, H * 0.88);
     }
 
-    // Thrust
+    // 추력
     const thrust = this._holding || this._space.isDown;
     if (thrust) {
-      this._player.body.velocity.y = Math.max(this._player.body.velocity.y - 820 * dt, -255);
+      this._player.body.velocity.y = Math.max(this._player.body.velocity.y - 840 * dt, -250);
     }
 
-    // Thrust sound: play once on rising edge
-    if (thrust && !this._wasThrust) {
-      this.sound.play('sfx_thrust', { volume: 0.4 });
-    }
-    this._wasThrust = thrust;
+    // 제트팩 사운드 (루프)
+    if (thrust && !this._thrustSnd.isPlaying) this._thrustSnd.play();
+    if (!thrust && this._thrustSnd.isPlaying)  this._thrustSnd.stop();
 
-    // Emitter follows player
-    this._emitter.setPosition(this._player.x - 26, this._player.y);
+    // 파티클 위치
+    this._emitter.setPosition(this._player.x - 24, this._player.y + 12);
     if (thrust && !this._emitter.emitting)  this._emitter.start();
     if (!thrust && this._emitter.emitting) this._emitter.stop();
 
-    // Tilt
-    this._player.angle = Phaser.Math.Clamp(this._player.body.velocity.y * 0.062, -28, 40);
+    // 기울기
+    this._player.angle = Phaser.Math.Clamp(this._player.body.velocity.y * 0.058, -25, 38);
 
-    // World bounds
+    // 화면 경계
     if (this._player.y <= 4 || this._player.y >= H - 4) { this._die(); return; }
 
-    // Pipe spawning
+    // 파이프 스폰
     this._nextPipe -= delta;
     if (this._nextPipe <= 0) {
       this._spawnPipe();
-      // Gradually tighten interval but keep it generous
-      const base = Math.max(2000 - this._dist * 0.03, 1200);
-      this._nextPipe = Phaser.Math.Between(~~(base * 0.9), ~~(base * 1.1));
+      const base = Math.max(2100 - this._dist * 0.025, 1200);
+      this._nextPipe = Phaser.Math.Between(~~(base * 0.88), ~~(base * 1.12));
     }
 
-    // Pipes: score + cleanup
+    // 파이프 업데이트
     this._pipes.getChildren().forEach(p => {
       if (!p.body) return;
       p.body.setVelocityX(-this._speed);
-      if (p.x < -100) { p.destroy(); return; }
-      if (p._primary && !p._scored && p.x + 40 < this._player.x) {
+      if (p.x < -120) { p.destroy(); return; }
+      if (p._primary && !p._scored && p.x + 41 < this._player.x) {
         p._scored = true;
         this._score += 1;
         this._scoreTxt.setText(`SCORE: ${this._score}`);
-        this.sound.play('sfx_score', { volume: 0.5 });
+        this.sound.play('sfx_score', { volume: 0.55 });
       }
     });
 
-    // Stars cleanup
+    // 별 업데이트
     this._stars.getChildren().forEach(s => {
       if (s.body) s.body.setVelocityX(-this._speed);
-      if (s.x < -40) s.destroy();
+      if (s.x < -50) s.destroy();
     });
 
-    // Progressive difficulty — much gentler curve
-    this._speed = Math.min(155 + this._dist * 0.012, 300);  // ← max 300 (was 400)
-    this._gap   = Math.max(220 - this._dist * 0.004, 165);  // ← min 165 (was 128)
+    // 난이도 (완만한 곡선)
+    this._speed = Math.min(160 + this._dist * 0.011, 310);
+    this._gap   = Math.max(210 - this._dist * 0.004, 160);
 
     this._diffTxt.setText(this._diffLabel());
   }
@@ -432,41 +484,44 @@ class GameOverScene extends Phaser.Scene {
   init(data) { this._score = data.score || 0; this._best = data.best || 0; }
 
   create() {
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000015, 0.75);
+    this.add.rectangle(W/2, H/2, W, H, 0x000012, 0.78);
 
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 100; i++) {
       this.add.image(
         Phaser.Math.Between(0, W), Phaser.Math.Between(0, H),
-        Math.random() < 0.75 ? 'bgs' : 'bgm'
-      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.7));
+        Math.random() < 0.75 ? 'bgs' : 'bgm_dot'
+      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.65));
     }
 
     const isNew = this._score > 0 && this._score >= this._best;
 
-    const go = this.add.text(W / 2, H * 0.22, 'GAME OVER', {
-      fontSize: '46px', fontFamily: 'monospace', color: '#ff4466',
+    // 캐릭터 아이콘
+    this.add.image(W/2, H*0.18, 'player').setScale(2).setAlpha(0.7).setAngle(15);
+
+    const go = this.add.text(W/2, H*0.32, 'GAME  OVER', {
+      fontSize: '44px', fontFamily: 'monospace', color: '#ff4466',
       stroke: '#220011', strokeThickness: 6,
     }).setOrigin(0.5);
-    this.tweens.add({ targets: go, scaleX: 1.06, scaleY: 1.06, duration: 720, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: go, scaleX: 1.06, scaleY: 1.06, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.add.text(W / 2, H * 0.40, `SCORE\n${this._score}`, {
-      fontSize: '38px', fontFamily: 'monospace', color: '#00eeff', align: 'center',
+    this.add.text(W/2, H*0.50, `SCORE   ${this._score}`, {
+      fontSize: '34px', fontFamily: 'monospace', color: '#00eeff',
     }).setOrigin(0.5);
 
-    const bestTxt = isNew ? `✦ NEW BEST: ${this._best} ✦` : `BEST: ${this._best}`;
-    this.add.text(W / 2, H * 0.56, bestTxt, {
-      fontSize: '19px', fontFamily: 'monospace',
-      color: isNew ? '#ffee00' : '#556677',
+    this.add.text(W/2, H*0.62,
+      isNew ? `✦  NEW  BEST:  ${this._best}  ✦` : `BEST:  ${this._best}`, {
+      fontSize: '20px', fontFamily: 'monospace',
+      color: isNew ? '#ffee00' : '#445566',
     }).setOrigin(0.5);
 
-    const btn = this.add.text(W / 2, H * 0.70, '▶  TAP TO PLAY AGAIN', {
+    const btn = this.add.text(W/2, H*0.76, '▶   TAP TO PLAY AGAIN', {
       fontSize: '22px', fontFamily: 'monospace', color: '#ffffff',
       stroke: '#003355', strokeThickness: 4,
     }).setOrigin(0.5);
-    this.tweens.add({ targets: btn, alpha: 0.15, duration: 750, yoyo: true, repeat: -1 });
+    this.tweens.add({ targets: btn, alpha: 0.12, duration: 750, yoyo: true, repeat: -1 });
 
-    this.add.text(W / 2, H * 0.80, 'press M for menu', {
-      fontSize: '13px', fontFamily: 'monospace', color: '#334455',
+    this.add.text(W/2, H*0.88, 'M = menu', {
+      fontSize: '12px', fontFamily: 'monospace', color: '#2a3f55',
     }).setOrigin(0.5);
 
     this.input.once('pointerdown', () => this.scene.start('Game'));
@@ -480,7 +535,7 @@ class GameOverScene extends Phaser.Scene {
 new Phaser.Game({
   type: Phaser.AUTO,
   width: W, height: H,
-  backgroundColor: '#00000e',
+  backgroundColor: '#00000c',
   physics: { default: 'arcade', arcade: { debug: false } },
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   scene: [BootScene, MenuScene, GameScene, GameOverScene],
