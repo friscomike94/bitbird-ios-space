@@ -280,8 +280,6 @@ class MenuScene extends Phaser.Scene {
     this._bgStars = [];
     this._makeBg();
     this.sound.stopAll();
-    const playBgm = () => { if (!this.sound.getAll().some(s => s.isPlaying)) this.sound.play('bgm', { loop: true, volume: 0.5 }); };
-    if (this.sound.locked) this.sound.once('unlocked', playBgm); else playBgm();
 
     this.add.image(W * 0.82, H * 0.42, 'planet').setScale(1.8).setAlpha(0.45);
 
@@ -316,8 +314,15 @@ class MenuScene extends Phaser.Scene {
       fontSize: '18px', fontFamily: 'monospace', color: '#ffcc44',
     }).setOrigin(0.5);
 
-    this.input.once('pointerdown',       () => { this.sound.play('sfx_start', { volume: 0.75 }); this.scene.start('Game'); });
-    this.input.keyboard.once('keydown-SPACE', () => { this.sound.play('sfx_start', { volume: 0.75 }); this.scene.start('Game'); });
+    const startGame = () => {
+      if (this.sound.context) this.sound.context.resume();
+      if (!this.sound.getAll().some(s => s.isPlaying && s.key === 'bgm'))
+        this.sound.play('bgm', { loop: true, volume: 0.5 });
+      this.sound.play('sfx_start', { volume: 0.75 });
+      this.scene.start('Game');
+    };
+    this.input.once('pointerdown', startGame);
+    this.input.keyboard.once('keydown-SPACE', startGame);
   }
 
   _makeBg() {
@@ -350,10 +355,9 @@ class GameScene extends Phaser.Scene {
     this._elapsed   = 0;
     this._pairList  = [];  // 전자기장 아크 추적용
 
-    if (!this.sound.getAll().some(s => s.isPlaying && BGM_KEYS.includes(s.key))) {
-      const playBgm = () => this.sound.play('bgm', { loop: true, volume: 0.5 });
-      if (this.sound.locked) this.sound.once('unlocked', playBgm); else playBgm();
-    }
+    if (this.sound.context) this.sound.context.resume();
+    if (!this.sound.getAll().some(s => s.isPlaying && s.key === 'bgm'))
+      this.sound.play('bgm', { loop: true, volume: 0.5 });
 
     // 배경
     this._bgLayers = [];
@@ -524,8 +528,7 @@ class GameScene extends Phaser.Scene {
     star.destroy();
     this._score += 3;
     this._scoreTxt.setText(`SCORE: ${this._score}`);
-    const sfxKey = Phaser.Utils.Array.GetRandom(STAR_SFX);
-    this.sound.play(sfxKey, { volume: Phaser.Math.FloatBetween(0.55, 0.85), detune: Phaser.Math.Between(-150, 150) });
+    this.sound.play('sfx_collect', { volume: Phaser.Math.FloatBetween(0.6, 0.9), rate: Phaser.Math.FloatBetween(0.85, 1.25) });
     const lbl = this.add.text(x, y - 6, '+3', {
       fontSize: '16px', fontFamily: 'monospace', color: '#ffee44',
     }).setDepth(30);
