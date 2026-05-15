@@ -80,6 +80,11 @@ let finaleStart  = 0;
 let unlockedDots = 1;     // guitar_ac starts unlocked
 let frameDt      = 0.016; // updated each loop tick, used by drawParticles
 
+// ── Audio ─────────────────────────────────────────────────────
+let audioCtx   = null;
+let gainNodes  = [];
+let audioReady = false;
+
 // ── RAF loop ─────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
@@ -216,6 +221,38 @@ function drawWall(depth, label) {
   }
 }
 
+async function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  const startTime = audioCtx.currentTime + 0.3;
+
+  const buffers = await Promise.all(
+    STEMS.map(s => fetch(s.file).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b)))
+  );
+
+  buffers.forEach((buf, i) => {
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(STEMS[i].startGain, audioCtx.currentTime);
+    gain.connect(audioCtx.destination);
+    gainNodes[i] = gain;
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.loop   = true;
+    src.connect(gain);
+    src.start(startTime);
+  });
+
+  audioReady = true;
+}
+
+function unlockStem(index) {
+  if (!audioCtx || index >= gainNodes.length) return;
+  gainNodes[index].gain.linearRampToValueAtTime(1, audioCtx.currentTime + UNLOCK_RAMP);
+}
+
 function positionCharacter() {
   const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
@@ -270,6 +307,14 @@ function draw(ts) {
 }
 
 video.addEventListener('canplay', () => { video.play().catch(() => {}); });
+let audioStarted = false;
+async function onFirstInteraction() {
+  if (audioStarted) return;
+  audioStarted = true;
+  await initAudio();
+}
+canvas.addEventListener('pointerdown', onFirstInteraction, { once: true });
+
 video.load();
 scene = SCENE.PLAYING;
 wallDepth = 0.85;
