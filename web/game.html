@@ -44,8 +44,8 @@ window.addEventListener('resize', resize);
 const BPM          = 150;
 const BEAT_S       = 60 / BPM;          // 0.4s per beat
 const UNLOCK_RAMP  = BEAT_S * 2;        // 0.8s gain ramp
-const CHAR_W       = 140;
-const CHAR_H       = 140;
+const CHAR_W       = 200;
+const CHAR_H       = 200;
 
 // Vanishing point = top-centre at 25% height
 function vp() { return { x: canvas.width / 2, y: canvas.height * 0.25 }; }
@@ -88,11 +88,17 @@ let audioReady = false;
 
 // ── RAF loop ─────────────────────────────────────────────────
 let lastTime = 0;
+let charFrameFrozen = false; // true after first GIF frame captured
+
 function loop(ts) {
   frameDt  = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  update(frameDt, ts);
-  draw(ts);
+  try {
+    update(frameDt, ts);
+    draw(ts);
+  } catch(e) {
+    console.error('Game loop error:', e);
+  }
   requestAnimationFrame(loop);
 }
 
@@ -210,7 +216,7 @@ function drawWall(depth, label) {
   ctx.stroke();
   ctx.shadowBlur   = 0;
 
-  if (depth < 0.5 && label) {
+  if (depth < 0.8 && label) {
     const fontSize = Math.round(10 + t * 18);
     ctx.font      = `700 ${fontSize}px 'Helvetica Neue', Arial, sans-serif`;
     ctx.textAlign = 'center';
@@ -376,39 +382,50 @@ function drawStemDots() {
   }
 }
 
+function captureCharFrame() {
+  if (!charImg.complete || charImg.naturalWidth === 0) return false;
+  offCtx.clearRect(0, 0, 320, 320);
+  offCtx.drawImage(charImg, 0, 0, 320, 320);
+  // Convert teal bg to black so screen-blend removes it
+  try {
+    const imageData = offCtx.getImageData(0, 0, 320, 320);
+    const d = imageData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (g > r + 40 && b > r + 40 && g > 100 && b > 100) {
+        d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 255;
+      }
+    }
+    offCtx.putImageData(imageData, 0, 0);
+  } catch(e) { /* canvas taint fallback — use raw frame */ }
+  return true;
+}
+
 function positionCharacter() {
   if (!charImg.complete || charImg.naturalWidth === 0) return;
 
+  // Capture first frame once; re-capture only during action states (animated)
+  const isAction = scene === SCENE.BREAKING || scene === SCENE.WALKING ||
+                   waveRings.length > 0;
+  if (!charFrameFrozen) {
+    if (captureCharFrame()) charFrameFrozen = true;
+    else return;
+  } else if (isAction) {
+    captureCharFrame();
+  }
+
   const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
+  const size    = 200 + chargeLevel * 12;
+  const drawX   = centerX - size / 2;
+  const drawY   = floorY - size * 0.85 - charOffsetY;
 
-  // Draw size — character is small (≈120px) centered at bottom of tunnel
-  const size = 120 + chargeLevel * 8;
-  const drawX = centerX - size / 2;
-  const drawY = floorY - size * 0.85 - charOffsetY;
-
-  // Draw GIF frame to offscreen canvas
-  offCtx.clearRect(0, 0, 320, 320);
-  offCtx.drawImage(charImg, 0, 0, 320, 320);
-
-  // Color-key: remove teal background (R<80, G>140, B>140)
-  const imageData = offCtx.getImageData(0, 0, 320, 320);
-  const d = imageData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i + 1], b = d[i + 2];
-    if (r < 80 && g > 140 && b > 140) {
-      d[i + 3] = 0;
-    }
-  }
-  offCtx.putImageData(imageData, 0, 0);
-
-  // Draw keyed character to game canvas
   ctx.save();
-  ctx.translate(centerX, drawY + size * 0.85);
-  // Slight charge wobble — scale up when charging
+  ctx.globalCompositeOperation = 'screen'; // black bg vanishes via screen blend
   const scale = 1 + chargeLevel * 0.05;
+  ctx.translate(centerX, drawY + size * 0.5);
   ctx.scale(scale, scale);
-  ctx.translate(-centerX, -(drawY + size * 0.85));
+  ctx.translate(-centerX, -(drawY + size * 0.5));
   ctx.drawImage(offCanvas, drawX, drawY, size, size);
   ctx.restore();
 }
@@ -417,13 +434,14 @@ function drawCharacterGlow() {
   if (chargeLevel < 0.05) return;
   const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
-  const r = 30 + chargeLevel * 100;
-  const grd = ctx.createRadialGradient(centerX, floorY, 0, centerX, floorY, r);
-  grd.addColorStop(0,   `rgba(255,180,80,${(chargeLevel * 0.4).toFixed(2)})`);
+  const charY   = floorY - 200 * 0.5 - charOffsetY; // centre of character
+  const r = 40 + chargeLevel * 120;
+  const grd = ctx.createRadialGradient(centerX, charY, 0, centerX, charY, r);
+  grd.addColorStop(0,   `rgba(255,180,80,${(chargeLevel * 0.5).toFixed(2)})`);
   grd.addColorStop(1,   'rgba(255,140,40,0)');
   ctx.fillStyle = grd;
   ctx.beginPath();
-  ctx.ellipse(centerX, floorY, r, r * 0.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(centerX, charY, r, r * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -482,7 +500,6 @@ function draw(ts) {
   }
 
   drawWaves(ts);
-  drawCharacterGlow();
   drawChargeBar();
   positionCharacter();
   drawParticles(frameDt);
@@ -622,9 +639,13 @@ function getBeatPulse() {
   return beat < 0.15 ? (1 - beat / 0.15) : 0;
 }
 
-canvas.addEventListener('pointerdown', async (e) => {
+canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  await onFirstInteraction();
+  // Fire-and-forget audio init — never block the game loop
+  if (!audioStarted) {
+    audioStarted = true;
+    initAudio().catch(err => console.warn('Audio init failed:', err));
+  }
   if (scene === SCENE.TITLE) {
     scene     = SCENE.PLAYING;
     wallDepth = 0.85;
@@ -647,11 +668,6 @@ canvas.addEventListener('pointerleave', () => {
 });
 
 let audioStarted = false;
-async function onFirstInteraction() {
-  if (audioStarted) return;
-  audioStarted = true;
-  await initAudio();
-}
 scene = SCENE.TITLE;
 requestAnimationFrame(loop);
 </script>
