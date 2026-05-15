@@ -8,22 +8,11 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
-#charVideo {
-  position: fixed;
-  width: 140px;
-  height: 140px;
-  mix-blend-mode: screen;
-  pointer-events: none;
-  z-index: 10;
-  transform-origin: bottom center;
-}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-<video id="charVideo" loop playsinline muted>
-  <source src="character.webm" type="video/webm">
-</video>
+<img id="charImg" src="character.gif" style="display:none;" alt="">
 
 <script>
 'use strict';
@@ -31,7 +20,11 @@ canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
 // ── Canvas setup ──────────────────────────────────────────────
 const canvas = document.getElementById('game');
 const ctx    = canvas.getContext('2d');
-const video  = document.getElementById('charVideo');
+const charImg = document.getElementById('charImg');
+const offCanvas = document.createElement('canvas');
+const offCtx    = offCanvas.getContext('2d', { willReadFrequently: true });
+offCanvas.width  = 320;
+offCanvas.height = 320;
 
 function resize() {
   canvas.width  = window.innerWidth;
@@ -269,10 +262,10 @@ function drawChargeBar() {
 
   if (chargeLevel > 0) {
     const grd = ctx.createLinearGradient(x, 0, x + barW, 0);
-    grd.addColorStop(0, '#ff30cc');
-    grd.addColorStop(1, '#aa00ff');
+    grd.addColorStop(0, '#ff9900');
+    grd.addColorStop(1, '#ff5500');
     ctx.fillStyle = grd;
-    ctx.shadowColor = '#ff30cc';
+    ctx.shadowColor = '#ff9900';
     ctx.shadowBlur  = 6;
     ctx.beginPath();
     ctx.roundRect(x, y, barW * chargeLevel, barH, 2);
@@ -282,18 +275,40 @@ function drawChargeBar() {
 }
 
 function positionCharacter() {
+  if (!charImg.complete || charImg.naturalWidth === 0) return;
+
   const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
-  const left = centerX - CHAR_W / 2;
-  const top  = floorY - CHAR_H - charOffsetY;
-  video.style.left = left + 'px';
-  video.style.top  = top  + 'px';
-  video.style.display = 'block';
 
-  const scale = 1 + chargeLevel * 0.06;
-  video.style.transform = `scale(${scale.toFixed(3)})`;
+  // Draw size — character is small (≈120px) centered at bottom of tunnel
+  const size = 120 + chargeLevel * 8;
+  const drawX = centerX - size / 2;
+  const drawY = floorY - size * 0.85 - charOffsetY;
 
-  video.playbackRate = isHolding ? 1.8 : 1.0;
+  // Draw GIF frame to offscreen canvas
+  offCtx.clearRect(0, 0, 320, 320);
+  offCtx.drawImage(charImg, 0, 0, 320, 320);
+
+  // Color-key: remove teal background (R<80, G>140, B>140)
+  const imageData = offCtx.getImageData(0, 0, 320, 320);
+  const d = imageData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    if (r < 80 && g > 140 && b > 140) {
+      d[i + 3] = 0;
+    }
+  }
+  offCtx.putImageData(imageData, 0, 0);
+
+  // Draw keyed character to game canvas
+  ctx.save();
+  ctx.translate(centerX, drawY + size * 0.85);
+  // Slight charge wobble — scale up when charging
+  const scale = 1 + chargeLevel * 0.05;
+  ctx.scale(scale, scale);
+  ctx.translate(-centerX, -(drawY + size * 0.85));
+  ctx.drawImage(offCanvas, drawX, drawY, size, size);
+  ctx.restore();
 }
 
 function drawCharacterGlow() {
@@ -302,11 +317,11 @@ function drawCharacterGlow() {
   const centerX = canvas.width / 2;
   const r = 30 + chargeLevel * 100;
   const grd = ctx.createRadialGradient(centerX, floorY, 0, centerX, floorY, r);
-  grd.addColorStop(0,   `rgba(255,100,200,${(chargeLevel * 0.5).toFixed(2)})`);
-  grd.addColorStop(1,   'rgba(255,40,200,0)');
+  grd.addColorStop(0,   `rgba(255,180,80,${(chargeLevel * 0.4).toFixed(2)})`);
+  grd.addColorStop(1,   'rgba(255,140,40,0)');
   ctx.fillStyle = grd;
   ctx.beginPath();
-  ctx.ellipse(centerX, floorY, r, r * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(centerX, floorY, r, r * 0.4, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -368,9 +383,9 @@ function drawWaves(ts) {
     ctx.scale(1, 0.35);
     ctx.beginPath();
     ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,60,200,${alpha.toFixed(2)})`;
+    ctx.strokeStyle = `rgba(255,180,60,${alpha.toFixed(2)})`;
     ctx.lineWidth   = 2 + w.power * 2;
-    ctx.shadowColor = '#ff40cc';
+    ctx.shadowColor = '#ffb030';
     ctx.shadowBlur  = 10;
     ctx.stroke();
     ctx.restore();
@@ -457,7 +472,6 @@ function startWalk() {
   wallDepth = 0.85;
 }
 
-video.addEventListener('canplay', () => { video.play().catch(() => {}); });
 canvas.addEventListener('pointerdown', async (e) => {
   e.preventDefault();
   await onFirstInteraction();
@@ -483,7 +497,6 @@ async function onFirstInteraction() {
   audioStarted = true;
   await initAudio();
 }
-video.load();
 scene = SCENE.PLAYING;
 wallDepth = 0.85;
 requestAnimationFrame(loop);
