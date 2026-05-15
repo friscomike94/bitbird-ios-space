@@ -9,11 +9,13 @@
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
 #charVideo {
-  display: none;
   position: fixed;
-  width: 140px; height: 140px;
+  width: 140px;
+  height: 140px;
   mix-blend-mode: screen;
   pointer-events: none;
+  z-index: 10;
+  transform-origin: bottom center;
 }
 </style>
 </head>
@@ -158,6 +160,35 @@ function drawFloorGrid() {
   ctx.globalAlpha = 1;
 }
 
+function positionCharacter() {
+  const floorY  = canvas.height - canvas.height * 0.22;
+  const centerX = canvas.width / 2;
+  const left = centerX - CHAR_W / 2;
+  const top  = floorY - CHAR_H - charOffsetY;
+  video.style.left = left + 'px';
+  video.style.top  = top  + 'px';
+  video.style.display = 'block';
+
+  const scale = 1 + chargeLevel * 0.06;
+  video.style.transform = `scale(${scale.toFixed(3)})`;
+
+  video.playbackRate = isHolding ? 1.8 : 1.0;
+}
+
+function drawCharacterGlow() {
+  if (chargeLevel < 0.05) return;
+  const floorY  = canvas.height - canvas.height * 0.22;
+  const centerX = canvas.width / 2;
+  const r = 30 + chargeLevel * 100;
+  const grd = ctx.createRadialGradient(centerX, floorY, 0, centerX, floorY, r);
+  grd.addColorStop(0,   `rgba(255,100,200,${(chargeLevel * 0.5).toFixed(2)})`);
+  grd.addColorStop(1,   'rgba(255,40,200,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.ellipse(centerX, floorY, r, r * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function update(dt, ts) {
   // placeholder — filled in later tasks
 }
@@ -168,6 +199,8 @@ function draw(ts) {
   drawStars(ts);
   drawTunnel();
   drawFloorGrid();
+  drawCharacterGlow();
+  positionCharacter();
 }
 
 video.addEventListener('canplay', () => { video.play().catch(() => {}); });
