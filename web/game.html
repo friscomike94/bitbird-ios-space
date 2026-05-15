@@ -50,6 +50,21 @@ const CHAR_H       = 140;
 // Vanishing point = top-centre at 25% height
 function vp() { return { x: canvas.width / 2, y: canvas.height * 0.25 }; }
 
+const STEMS = [
+  { file: 'sounds/guitar_ac.mp3',       label: 'GUITAR AC',       startGain: 1 },
+  { file: 'sounds/bass.mp3',            label: 'BASS',            startGain: 0 },
+  { file: 'sounds/guitar_baritone.mp3', label: 'GUITAR BARITONE', startGain: 0 },
+  { file: 'sounds/synth_drone.mp3',     label: 'SYNTH DRONE',     startGain: 0 },
+  { file: 'sounds/synth_lead.mp3',      label: 'SYNTH LEAD',      startGain: 0 },
+  { file: 'sounds/guitar_main.mp3',     label: 'GUITAR MAIN',     startGain: 0 },
+  { file: 'sounds/strings.mp3',         label: 'STRINGS',         startGain: 0 },
+  { file: 'sounds/fx.mp3',              label: 'FX',              startGain: 0 },
+  { file: 'sounds/vox1.mp3',            label: 'VOX 1',           startGain: 0 },
+  { file: 'sounds/vox2.mp3',            label: 'VOX 2',           startGain: 0 },
+];
+
+let wallDepth = 0.85;
+
 // ── Game state ───────────────────────────────────────────────
 const SCENE = { TITLE: 0, PLAYING: 1, BREAKING: 2, WALKING: 3, FINALE: 4 };
 let scene        = SCENE.TITLE;
@@ -160,6 +175,47 @@ function drawFloorGrid() {
   ctx.globalAlpha = 1;
 }
 
+function drawWall(depth, label) {
+  const v      = vp();
+  const floorY = canvas.height - canvas.height * 0.22;
+  const sides  = canvas.width * 0.05;
+
+  const t   = 1 - depth;
+  const top = v.y  + (floorY - 80 - v.y)  * t;
+  const bot = v.y  + (floorY - v.y)        * t;
+  const xL  = v.x  + (sides - v.x)         * t;
+  const xR  = v.x  + (canvas.width - sides - v.x) * t;
+
+  const alpha = 0.3 + t * 0.6;
+
+  ctx.fillStyle = `rgba(100,0,120,${(alpha * 0.4).toFixed(2)})`;
+  ctx.beginPath();
+  ctx.moveTo(xL, top);
+  ctx.lineTo(xR, top);
+  ctx.lineTo(xR, bot);
+  ctx.lineTo(xL, bot);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(255,60,220,${alpha.toFixed(2)})`;
+  ctx.lineWidth   = 2 + t * 2;
+  ctx.shadowColor  = '#ff40cc';
+  ctx.shadowBlur   = 8 + t * 16;
+  ctx.stroke();
+  ctx.shadowBlur   = 0;
+
+  if (depth < 0.5 && label) {
+    const fontSize = Math.round(10 + t * 18);
+    ctx.font      = `700 ${fontSize}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(255,128,238,${(t * 1.2).toFixed(2)})`;
+    ctx.shadowColor = '#ff40cc';
+    ctx.shadowBlur  = 12;
+    ctx.fillText('🎸 ' + label + ' LOCKED', v.x, (top + bot) / 2 + fontSize * 0.35);
+    ctx.shadowBlur  = 0;
+  }
+}
+
 function positionCharacter() {
   const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
@@ -190,7 +246,11 @@ function drawCharacterGlow() {
 }
 
 function update(dt, ts) {
-  // placeholder — filled in later tasks
+  if (scene === SCENE.PLAYING) {
+    if (wallDepth > 0) {
+      wallDepth = Math.max(0, wallDepth - dt * 0.28);
+    }
+  }
 }
 
 function draw(ts) {
@@ -199,12 +259,20 @@ function draw(ts) {
   drawStars(ts);
   drawTunnel();
   drawFloorGrid();
+
+  if (scene === SCENE.PLAYING || scene === SCENE.BREAKING) {
+    const label = currentWall < STEMS.length - 1 ? STEMS[currentWall + 1].label : null;
+    drawWall(wallDepth, label);
+  }
+
   drawCharacterGlow();
   positionCharacter();
 }
 
 video.addEventListener('canplay', () => { video.play().catch(() => {}); });
 video.load();
+scene = SCENE.PLAYING;
+wallDepth = 0.85;
 requestAnimationFrame(loop);
 </script>
 </body>
