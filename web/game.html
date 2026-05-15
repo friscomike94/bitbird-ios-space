@@ -274,6 +274,39 @@ function drawChargeBar() {
   }
 }
 
+function drawStemDots() {
+  const total  = STEMS.length;
+  const dotR   = 4;
+  const gap    = 14;
+  const totalW = total * (dotR * 2) + (total - 1) * (gap - dotR * 2);
+  let x = (canvas.width - totalW) / 2;
+  const y = 18;
+
+  for (let i = 0; i < total; i++) {
+    const on = i < unlockedDots;
+    ctx.beginPath();
+    ctx.arc(x + dotR, y, dotR, 0, Math.PI * 2);
+    if (on) {
+      ctx.fillStyle   = '#ff9900';
+      ctx.shadowColor = '#ff9900';
+      ctx.shadowBlur  = 8;
+    } else {
+      ctx.fillStyle  = 'rgba(120,60,0,0.25)';
+      ctx.shadowBlur = 0;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (!on) {
+      ctx.strokeStyle = 'rgba(180,90,0,0.3)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+
+    x += gap;
+  }
+}
+
 function positionCharacter() {
   if (!charImg.complete || charImg.naturalWidth === 0) return;
 
@@ -380,6 +413,8 @@ function draw(ts) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     flashAlpha = Math.max(0, flashAlpha - 0.04);
   }
+
+  drawStemDots();
 }
 
 function drawWaves(ts) {
