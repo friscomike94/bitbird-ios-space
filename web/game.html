@@ -326,15 +326,33 @@ function drawCharacterGlow() {
 }
 
 function update(dt, ts) {
+  // Charge
   if (isHolding && scene === SCENE.PLAYING) {
     chargeLevel = Math.min((performance.now() - chargeStart) / 2000, 1);
   } else if (!isHolding) {
     chargeLevel = Math.max(0, chargeLevel - dt * 3);
   }
 
-  if (scene === SCENE.PLAYING) {
-    if (wallDepth > 0) {
-      wallDepth = Math.max(0, wallDepth - dt * 0.28);
+  // Wall approach
+  if (scene === SCENE.PLAYING && wallDepth > 0) {
+    wallDepth = Math.max(0, wallDepth - dt * 0.28);
+  }
+
+  // Walk animation: character moves forward (up-screen) over 800ms
+  if (scene === SCENE.WALKING) {
+    const walkDur = 0.8;
+    const t = Math.min((performance.now() - walkStart) / 1000 / walkDur, 1);
+    charOffsetY = easeInOut(t) * 40;
+
+    if (t >= 1) {
+      charOffsetY = 0;
+      currentWall++;
+      if (currentWall >= STEMS.length - 1) {
+        startFinale();
+      } else {
+        scene     = SCENE.PLAYING;
+        wallDepth = 0.85;
+      }
     }
   }
 }
@@ -466,10 +484,17 @@ function breakWall(power) {
 }
 
 function startWalk() {
-  console.log('walk to wall', currentWall + 1);
-  scene = SCENE.PLAYING;
-  currentWall++;
-  wallDepth = 0.85;
+  scene = SCENE.WALKING;
+  walkStart = performance.now();
+}
+
+function startFinale() {
+  scene       = SCENE.FINALE;
+  finaleStart = performance.now();
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 }
 
 canvas.addEventListener('pointerdown', async (e) => {
