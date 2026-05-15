@@ -335,16 +335,64 @@ function draw(ts) {
     drawWall(wallDepth, label);
   }
 
+  drawWaves(ts);
   drawCharacterGlow();
   drawChargeBar();
   positionCharacter();
+}
+
+function drawWaves(ts) {
+  const floorY  = canvas.height - canvas.height * 0.22;
+  const centerX = canvas.width / 2;
+  const originY = floorY - CHAR_H * 0.5;
+
+  waveRings = waveRings.filter(w => {
+    const elapsed = (ts - w.startTs) / 1000;
+    const t       = Math.min(elapsed / w.duration, 1);
+    if (t >= 1) return false;
+
+    const size   = w.size0 + t * w.maxSize;
+    const alpha  = (1 - t) * 0.8;
+    const y      = originY - t * (originY - vp().y - 20);
+
+    ctx.save();
+    ctx.translate(centerX, y);
+    ctx.scale(1, 0.35);
+    ctx.beginPath();
+    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,60,200,${alpha.toFixed(2)})`;
+    ctx.lineWidth   = 2 + w.power * 2;
+    ctx.shadowColor = '#ff40cc';
+    ctx.shadowBlur  = 10;
+    ctx.stroke();
+    ctx.restore();
+
+    return true;
+  });
 }
 
 function fireWave() {
   const power = chargeLevel;
   chargeLevel = 0;
   if (power < 0.01) return;
-  console.log('fire! power:', power.toFixed(2));
+
+  const ts = performance.now();
+  for (let i = 0; i < 3; i++) {
+    waveRings.push({
+      startTs:  ts + i * 120,
+      duration: 0.7 + power * 0.6,
+      size0:    20,
+      maxSize:  60 + power * 200,
+      power,
+    });
+  }
+  if (wallDepth <= 0.05) {
+    setTimeout(() => breakWall(power), 350);
+  }
+}
+
+function breakWall(power) {
+  console.log('break wall', currentWall, 'power', power.toFixed(2));
 }
 
 video.addEventListener('canplay', () => { video.play().catch(() => {}); });
