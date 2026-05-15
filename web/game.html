@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>I Am Thinking Of You</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
+#charVideo {
+  display: none;
+  position: fixed;
+  width: 140px; height: 140px;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<video id="charVideo" loop playsinline muted>
+  <source src="character.webm" type="video/webm">
+</video>
+
+<script>
+'use strict';
+
+// ── Canvas setup ──────────────────────────────────────────────
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+const video  = document.getElementById('charVideo');
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Constants ────────────────────────────────────────────────
+const BPM          = 150;
+const BEAT_S       = 60 / BPM;          // 0.4s per beat
+const UNLOCK_RAMP  = BEAT_S * 2;        // 0.8s gain ramp
+const CHAR_W       = 140;
+const CHAR_H       = 140;
+
+// Vanishing point = top-centre at 25% height
+function vp() { return { x: canvas.width / 2, y: canvas.height * 0.25 }; }
+
+// ── Game state ───────────────────────────────────────────────
+const SCENE = { TITLE: 0, PLAYING: 1, BREAKING: 2, WALKING: 3, FINALE: 4 };
+let scene        = SCENE.TITLE;
+let currentWall  = 0;     // 0-8 (9 walls)
+let charOffsetY  = 0;     // walk animation offset (px, positive = up)
+let chargeLevel  = 0;     // 0-1
+let isHolding    = false;
+let chargeStart  = 0;
+let particles    = [];
+let waveRings    = [];
+let walkStart    = 0;
+let finaleStart  = 0;
+let unlockedDots = 1;     // guitar_ac starts unlocked
+let frameDt      = 0.016; // updated each loop tick, used by drawParticles
+
+// ── RAF loop ─────────────────────────────────────────────────
+let lastTime = 0;
+function loop(ts) {
+  frameDt  = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  update(frameDt, ts);
+  draw(ts);
+  requestAnimationFrame(loop);
+}
+
+function update(dt, ts) {
+  // placeholder — filled in later tasks
+}
+
+function draw(ts) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // placeholder — filled in later tasks
+  ctx.fillStyle = '#020010';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+video.addEventListener('canplay', () => { video.play().catch(() => {}); });
+video.load();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
