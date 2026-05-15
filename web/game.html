@@ -2,12 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>I Am Thinking Of You</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
+canvas#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
 </style>
 </head>
 <body>
@@ -199,7 +206,7 @@ function drawWall(depth, label) {
   ctx.strokeStyle = `rgba(255,60,220,${alpha.toFixed(2)})`;
   ctx.lineWidth   = 2 + t * 2;
   ctx.shadowColor  = '#ff40cc';
-  ctx.shadowBlur   = 8 + t * 16;
+  ctx.shadowBlur   = 8 + t * 16 + getBeatPulse() * 12;
   ctx.stroke();
   ctx.shadowBlur   = 0;
 
@@ -607,6 +614,12 @@ function startFinale() {
 
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function getBeatPulse() {
+  if (!audioCtx) return 0;
+  const beat  = (audioCtx.currentTime % BEAT_S) / BEAT_S;
+  return beat < 0.15 ? (1 - beat / 0.15) : 0;
 }
 
 canvas.addEventListener('pointerdown', async (e) => {
