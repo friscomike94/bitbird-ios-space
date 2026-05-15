@@ -298,6 +298,44 @@ function drawTitle() {
   ctx.shadowBlur = 0;
 }
 
+function drawFinale(ts) {
+  const cx      = canvas.width / 2;
+  const elapsed = (performance.now() - finaleStart) / 1000;
+
+  // Expanding warm light rings
+  for (let i = 0; i < 5; i++) {
+    const phase = (elapsed * 0.7 + i * 0.4) % 3;
+    const t     = phase / 3;
+    const r     = t * canvas.width * 0.9;
+    const alpha = (1 - t) * 0.3;
+    ctx.beginPath();
+    ctx.arc(cx, canvas.height * 0.5, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,180,60,${alpha.toFixed(2)})`;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = '#ffaa30';
+    ctx.shadowBlur  = 20;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+  }
+
+  // Fade-in text after 1.5s
+  const textAlpha = Math.min(Math.max((elapsed - 1.5) / 1.5, 0), 1);
+  if (textAlpha > 0) {
+    ctx.textAlign   = 'center';
+    ctx.font        = `300 ${Math.round(canvas.width * 0.06)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle   = `rgba(255,230,180,${textAlpha.toFixed(2)})`;
+    ctx.shadowColor = '#ffaa40';
+    ctx.shadowBlur  = 24;
+    ctx.fillText('i am thinking of you', cx, canvas.height * 0.38);
+
+    ctx.font      = `400 ${Math.round(canvas.width * 0.034)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(200,160,100,${textAlpha.toFixed(2)})`;
+    ctx.shadowBlur = 10;
+    ctx.fillText('thank you', cx, canvas.height * 0.38 + canvas.width * 0.1);
+    ctx.shadowBlur = 0;
+  }
+}
+
 function drawStemDots() {
   const total  = STEMS.length;
   const dotR   = 4;
