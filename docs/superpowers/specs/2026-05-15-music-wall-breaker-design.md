@@ -66,7 +66,7 @@ A pure music experience game. The player is a neon guitarist standing at the bot
 - **Particle burst:** On wall break — 20–30 pink/purple particles scatter from wall center
 
 ### Character
-- Source: `character.mov` — neon laser-outline guitarist, green + red on black, 492×500px, 60fps
+- Source: `character.mov` — neon laser-outline guitarist, golden amber on black, 492×500px, 60fps
 - Trimmed to first clean loop (~4s) and converted to `character.webm`
 - Displayed at bottom-center of screen, ~22px equivalent height scaled to fit
 - Drawn each frame via hidden `<video>` element onto Canvas with `globalCompositeOperation = 'screen'` — black background vanishes, only glowing neon lines remain
