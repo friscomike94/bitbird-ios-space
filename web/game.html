@@ -73,15 +73,101 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
+// ── Renderers ────────────────────────────────────────────────
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0,   '#020010');
+  grad.addColorStop(0.5, '#0a0028');
+  grad.addColorStop(1,   '#14002a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawStars(ts) {
+  const seed = 42;
+  for (let i = 0; i < 80; i++) {
+    const t  = (seed * (i + 1) * 1.618) % 1;
+    const t2 = (seed * (i + 1) * 3.141) % 1;
+    const t3 = (seed * (i + 1) * 2.718) % 1;
+    const x  = (t  * canvas.width);
+    const y  = (t2 * canvas.height * 0.7);
+    const r  = 0.5 + t3 * 1.2;
+    const blink = 0.3 + 0.5 * Math.sin(ts * 0.001 * (1 + t3 * 2) + i);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${blink.toFixed(2)})`;
+    ctx.fill();
+  }
+}
+
+function drawTunnel() {
+  const v = vp();
+  const floorY = canvas.height - canvas.height * 0.22;
+  const sides  = canvas.width * 0.05;
+
+  ctx.strokeStyle = 'rgba(255,40,200,0.18)';
+  ctx.lineWidth   = 1;
+
+  ctx.beginPath();
+  ctx.moveTo(v.x, v.y);
+  ctx.lineTo(sides, floorY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(v.x, v.y);
+  ctx.lineTo(canvas.width - sides, floorY);
+  ctx.stroke();
+
+  const topW = canvas.width * 0.35;
+  ctx.beginPath();
+  ctx.moveTo(v.x - topW / 2, v.y);
+  ctx.lineTo(v.x + topW / 2, v.y);
+  ctx.stroke();
+}
+
+function drawFloorGrid() {
+  const floorY = canvas.height - canvas.height * 0.22;
+  const h      = canvas.height - floorY;
+
+  ctx.strokeStyle = 'rgba(255,40,200,0.15)';
+  ctx.lineWidth   = 1;
+  const v = vp();
+  const cols = 10;
+  for (let i = 0; i <= cols; i++) {
+    const t  = i / cols;
+    const bx = t * canvas.width;
+    ctx.beginPath();
+    ctx.moveTo(v.x + (bx - v.x) * 0.05, floorY);
+    ctx.lineTo(bx, canvas.height);
+    ctx.stroke();
+  }
+
+  const rows = 6;
+  for (let i = 0; i <= rows; i++) {
+    const t  = i / rows;
+    const y  = floorY + t * h;
+    const xL = v.x + (0 - v.x) * (1 - t * 0.95);
+    const xR = v.x + (canvas.width - v.x) * (1 - t * 0.95);
+    ctx.globalAlpha = 0.1 + t * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(xL, y);
+    ctx.lineTo(xR, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function update(dt, ts) {
   // placeholder — filled in later tasks
 }
 
 function draw(ts) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // placeholder — filled in later tasks
-  ctx.fillStyle = '#020010';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  drawStars(ts);
+  drawTunnel();
+  drawFloorGrid();
 }
 
 video.addEventListener('canplay', () => { video.play().catch(() => {}); });
