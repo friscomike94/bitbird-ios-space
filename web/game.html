@@ -269,20 +269,17 @@ function drawChargeBar() {
   const y       = floorY - CHAR_H - charOffsetY - 16;
 
   ctx.fillStyle = 'rgba(255,40,200,0.12)';
-  ctx.beginPath();
-  ctx.roundRect(x, y, barW, barH, 2);
-  ctx.fill();
+  ctx.fillRect(x, y, barW, barH);
 
-  if (chargeLevel > 0) {
+  const fillW = barW * chargeLevel;
+  if (fillW >= 1) {
     const grd = ctx.createLinearGradient(x, 0, x + barW, 0);
     grd.addColorStop(0, '#ff9900');
     grd.addColorStop(1, '#ff5500');
     ctx.fillStyle = grd;
     ctx.shadowColor = '#ff9900';
     ctx.shadowBlur  = 6;
-    ctx.beginPath();
-    ctx.roundRect(x, y, barW * chargeLevel, barH, 2);
-    ctx.fill();
+    ctx.fillRect(x, y, fillW, barH);
     ctx.shadowBlur = 0;
   }
 }
@@ -421,13 +418,16 @@ function positionCharacter() {
   const drawY   = floorY - size * 0.85 - charOffsetY;
 
   ctx.save();
-  ctx.globalCompositeOperation = 'screen'; // black bg vanishes via screen blend
-  const scale = 1 + chargeLevel * 0.05;
-  ctx.translate(centerX, drawY + size * 0.5);
-  ctx.scale(scale, scale);
-  ctx.translate(-centerX, -(drawY + size * 0.5));
-  ctx.drawImage(offCanvas, drawX, drawY, size, size);
-  ctx.restore();
+  try {
+    ctx.globalCompositeOperation = 'screen'; // black bg vanishes via screen blend
+    const scale = 1 + chargeLevel * 0.05;
+    ctx.translate(centerX, drawY + size * 0.5);
+    ctx.scale(scale, scale);
+    ctx.translate(-centerX, -(drawY + size * 0.5));
+    ctx.drawImage(offCanvas, drawX, drawY, size, size);
+  } finally {
+    ctx.restore(); // always restore even if drawImage throws
+  }
 }
 
 function drawCharacterGlow() {
@@ -478,6 +478,7 @@ function update(dt, ts) {
 }
 
 function draw(ts) {
+  ctx.globalCompositeOperation = 'source-over'; // reset in case positionCharacter errored
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBackground();
   drawStars(ts);
