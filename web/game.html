@@ -262,11 +262,10 @@ function unlockStem(index) {
 
 function drawChargeBar() {
   if (scene !== SCENE.PLAYING) return;
-  const floorY  = canvas.height - canvas.height * 0.22;
-  const barW    = canvas.width * 0.5;
-  const barH    = 4;
-  const x       = (canvas.width - barW) / 2;
-  const y       = floorY - CHAR_H - charOffsetY - 16;
+  const barW = canvas.width * 0.5;
+  const barH = 4;
+  const x    = (canvas.width - barW) / 2;
+  const y    = canvas.height - CHAR_H - charOffsetY - 20; // just above character
 
   ctx.fillStyle = 'rgba(255,40,200,0.12)';
   ctx.fillRect(x, y, barW, barH);
@@ -383,18 +382,17 @@ function captureCharFrame() {
   if (!charImg.complete || charImg.naturalWidth === 0) return false;
   offCtx.clearRect(0, 0, 320, 320);
   offCtx.drawImage(charImg, 0, 0, 320, 320);
-  // Convert teal bg to black so screen-blend removes it
+  // Remove teal background: min(G,B)-R > 90 cleanly separates bright teal
+  // (diff ~150+) from character's blue clothing (diff ~60)
   try {
     const imageData = offCtx.getImageData(0, 0, 320, 320);
     const d = imageData.data;
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i], g = d[i + 1], b = d[i + 2];
-      if (g > r + 40 && b > r + 40 && g > 100 && b > 100) {
-        d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 255;
-      }
+      if (Math.min(g, b) - r > 90) d[i + 3] = 0;
     }
     offCtx.putImageData(imageData, 0, 0);
-  } catch(e) { /* canvas taint fallback — use raw frame */ }
+  } catch(e) { /* canvas taint — draw raw */ }
   return true;
 }
 
@@ -411,22 +409,22 @@ function positionCharacter() {
     captureCharFrame();
   }
 
-  const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
   const size    = 200 + chargeLevel * 12;
   const drawX   = centerX - size / 2;
-  const drawY   = floorY - size * 0.85 - charOffsetY;
+  // Character sits at very bottom, clearly below the wall
+  const drawY   = canvas.height - size - charOffsetY;
 
   ctx.save();
   try {
-    ctx.globalCompositeOperation = 'screen'; // black bg vanishes via screen blend
+    // Background is now transparent — plain source-over works
     const scale = 1 + chargeLevel * 0.05;
     ctx.translate(centerX, drawY + size * 0.5);
     ctx.scale(scale, scale);
     ctx.translate(-centerX, -(drawY + size * 0.5));
     ctx.drawImage(offCanvas, drawX, drawY, size, size);
   } finally {
-    ctx.restore(); // always restore even if drawImage throws
+    ctx.restore();
   }
 }
 
@@ -453,9 +451,9 @@ function update(dt, ts) {
     chargeLevel = Math.max(0, chargeLevel - dt * 3);
   }
 
-  // Wall approach
-  if (scene === SCENE.PLAYING && wallDepth > 0) {
-    wallDepth = Math.max(0, wallDepth - dt * 0.28);
+  // Wall approach — stops at 0.15 so it hovers above the character
+  if (scene === SCENE.PLAYING && wallDepth > 0.15) {
+    wallDepth = Math.max(0.15, wallDepth - dt * 0.28);
   }
 
   // Walk animation: character moves forward (up-screen) over 800ms
@@ -505,6 +503,18 @@ function draw(ts) {
   positionCharacter();
   drawParticles(frameDt);
 
+  // "Hold to fire" hint once wall has arrived
+  if (scene === SCENE.PLAYING && wallDepth <= 0.16 && chargeLevel < 0.05) {
+    const blink = 0.4 + 0.4 * Math.sin(performance.now() * 0.004);
+    ctx.textAlign = 'center';
+    ctx.font = `400 ${Math.round(canvas.width * 0.038)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(255,160,40,${blink.toFixed(2)})`;
+    ctx.shadowColor = '#ff9900';
+    ctx.shadowBlur = 8;
+    ctx.fillText('hold to fire', canvas.width / 2, canvas.height * 0.88);
+    ctx.shadowBlur = 0;
+  }
+
   if (flashAlpha > 0) {
     ctx.fillStyle = `rgba(255,220,180,${flashAlpha.toFixed(2)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -520,9 +530,8 @@ function draw(ts) {
 }
 
 function drawWaves(ts) {
-  const floorY  = canvas.height - canvas.height * 0.22;
   const centerX = canvas.width / 2;
-  const originY = floorY - CHAR_H * 0.5;
+  const originY = canvas.height - CHAR_H * 0.7; // waves burst from character centre
 
   waveRings = waveRings.filter(w => {
     const elapsed = (ts - w.startTs) / 1000;
@@ -550,9 +559,10 @@ function drawWaves(ts) {
 }
 
 function fireWave() {
-  const power = chargeLevel;
-  chargeLevel = 0;
-  if (power < 0.01) return;
+  // Compute power from actual hold time so quick taps still register
+  const heldMs = isHolding ? (performance.now() - chargeStart) : 0;
+  const power  = Math.max(chargeLevel, Math.min(heldMs / 2000, 1), 0.15);
+  chargeLevel  = 0;
 
   const ts = performance.now();
   for (let i = 0; i < 3; i++) {
@@ -564,9 +574,8 @@ function fireWave() {
       power,
     });
   }
-  if (wallDepth <= 0.05) {
-    setTimeout(() => breakWall(power), 350);
-  }
+  // Always break — wave travels and hits wall regardless of distance
+  setTimeout(() => breakWall(power), 350);
 }
 
 function spawnParticles(power) {
