@@ -1,723 +1,685 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>Space Jump</title>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>I Am Thinking Of You</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+canvas#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+</style>
 </head>
 <body>
+<canvas id="game"></canvas>
+<img id="charImg" src="character.gif" style="display:none;" alt="">
+
 <script>
 'use strict';
 
-const W = 640, H = 480;
-const BGM_KEYS  = ['bgm'];
-const STAR_SFX  = ['sfx_collect', 'sfx_score', 'sfx_start'];
+// ── Canvas setup ──────────────────────────────────────────────
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+const charImg = document.getElementById('charImg');
+const offCanvas = document.createElement('canvas');
+const offCtx    = offCanvas.getContext('2d', { willReadFrequently: true });
+offCanvas.width  = 320;
+offCanvas.height = 320;
 
-function starPoints(cx, cy, r, inner, n = 5) {
-  if (inner == null) inner = r * 0.42;
-  const pts = [];
-  for (let i = 0; i < n * 2; i++) {
-    const a = (i * Math.PI / n) - Math.PI / 2;
-    const rad = i % 2 === 0 ? r : inner;
-    pts.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad });
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Constants ────────────────────────────────────────────────
+const BPM          = 150;
+const BEAT_S       = 60 / BPM;          // 0.4s per beat
+const UNLOCK_RAMP  = BEAT_S * 2;        // 0.8s gain ramp
+const CHAR_W       = 200;
+const CHAR_H       = 200;
+
+// Vanishing point = top-centre at 25% height
+function vp() { return { x: canvas.width / 2, y: canvas.height * 0.25 }; }
+
+const STEMS = [
+  { file: 'sounds/guitar_ac.mp3',       label: 'GUITAR AC',       startGain: 1 },
+  { file: 'sounds/bass.mp3',            label: 'BASS',            startGain: 0 },
+  { file: 'sounds/guitar_baritone.mp3', label: 'GUITAR BARITONE', startGain: 0 },
+  { file: 'sounds/synth_drone.mp3',     label: 'SYNTH DRONE',     startGain: 0 },
+  { file: 'sounds/synth_lead.mp3',      label: 'SYNTH LEAD',      startGain: 0 },
+  { file: 'sounds/guitar_main.mp3',     label: 'GUITAR MAIN',     startGain: 0 },
+  { file: 'sounds/strings.mp3',         label: 'STRINGS',         startGain: 0 },
+  { file: 'sounds/fx.mp3',              label: 'FX',              startGain: 0 },
+  { file: 'sounds/vox1.mp3',            label: 'VOX 1',           startGain: 0 },
+  { file: 'sounds/vox2.mp3',            label: 'VOX 2',           startGain: 0 },
+];
+
+let wallDepth = 0.85;
+
+// ── Game state ───────────────────────────────────────────────
+const SCENE = { TITLE: 0, PLAYING: 1, BREAKING: 2, WALKING: 3, FINALE: 4 };
+let scene        = SCENE.TITLE;
+let currentWall  = 0;     // 0-8 (9 walls)
+let charOffsetY  = 0;     // walk animation offset (px, positive = up)
+let chargeLevel  = 0;     // 0-1
+let isHolding    = false;
+let chargeStart  = 0;
+let particles    = [];
+let waveRings    = [];
+let walkStart    = 0;
+let finaleStart  = 0;
+let unlockedDots = 1;     // guitar_ac starts unlocked
+let frameDt      = 0.016; // updated each loop tick, used by drawParticles
+let flashAlpha   = 0;
+
+// ── Audio ─────────────────────────────────────────────────────
+let audioCtx   = null;
+let gainNodes  = [];
+let audioReady = false;
+
+// ── RAF loop ─────────────────────────────────────────────────
+let lastTime = 0;
+let charFrameFrozen = false; // true after first GIF frame captured
+
+function loop(ts) {
+  frameDt  = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  try {
+    update(frameDt, ts);
+    draw(ts);
+  } catch(e) {
+    console.error('Game loop error:', e);
   }
-  return pts;
+  requestAnimationFrame(loop);
 }
 
-function hi()     { return parseInt(localStorage.getItem('spaceJumpHi') || '0'); }
-function setHi(v) { localStorage.setItem('spaceJumpHi', v); }
+// ── Renderers ────────────────────────────────────────────────
 
-// ── BootScene ─────────────────────────────────────────────────────────────────
-class BootScene extends Phaser.Scene {
-  constructor() { super('Boot'); }
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0,   '#020010');
+  grad.addColorStop(0.5, '#0a0028');
+  grad.addColorStop(1,   '#14002a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
 
-  preload() {
-    this.load.audio('bgm',  'sounds/bgm.mp3');
-    this.load.audio('bgm2', 'sounds/bgm2.mp3');
-    this.load.audio('bgm3', 'sounds/bgm3.mp3');
-    this.load.audio('bgm4', 'sounds/bgm4.mp3');
-    this.load.audio('sfx_collect', 'sounds/sfx_collect.mp3');
-    this.load.audio('sfx_hit',     'sounds/sfx_hit.mp3');
-    this.load.audio('sfx_score',   'sounds/sfx_score.mp3');
-    this.load.audio('sfx_thrust',  'sounds/sfx_thrust.mp3');
-    this.load.audio('sfx_start',   'sounds/sfx_start.mp3');
-
-    const bar = this.add.rectangle(W/2, H/2, 0, 18, 0x00eeff).setDepth(1);
-    this.add.rectangle(W/2, H/2, W * 0.55, 22, 0x112233).setDepth(0);
-    this.add.text(W/2, H/2 - 34, 'LOADING...', {
-      fontSize: '15px', fontFamily: 'monospace', color: '#557799',
-    }).setOrigin(0.5).setDepth(2);
-    this.load.on('progress', v => { bar.width = W * 0.55 * v; });
-  }
-
-  create() {
-    this._makePlayer();
-    this._makeThruster();
-    this._makeStar();
-    this._makeEMField();
-    this._makeBgDots();
-    this._makePlanet();
-    this.scene.start('Menu');
-  }
-
-  // ══ 리얼리스틱 SF 우주복 (52×60) ════════════════════════════════════════════
-  _makePlayer() {
-    const g = this.make.graphics({ add: false });
-
-    // ─── 제트팩 (뒤/왼쪽) ────────────────────────────────────────
-    // 메인 팩 바디
-    g.fillStyle(0x232d3e); g.fillRect(0, 12, 14, 32);
-    // 팩 패널 디테일
-    g.fillStyle(0x1a2230); g.fillRect(2, 14, 5, 10);
-    g.fillStyle(0x1a2230); g.fillRect(2, 28, 5, 12);
-    // 에너지 도관 라인
-    g.fillStyle(0x00aaff, 0.9); g.fillRect(8, 16, 2, 26);
-    g.fillStyle(0x0055aa, 0.7); g.fillRect(9, 16, 1, 26);
-    // 추진기 노즐 (3개)
-    g.fillStyle(0x141c28); g.fillCircle(3, 20, 4);
-    g.fillStyle(0x141c28); g.fillCircle(3, 30, 4);
-    g.fillStyle(0x141c28); g.fillCircle(3, 40, 3.5);
-    // 노즐 글로우 (시안)
-    g.fillStyle(0x00eeff, 1.0); g.fillCircle(3, 20, 2.5);
-    g.fillStyle(0x00aacc, 0.8); g.fillCircle(3, 30, 2);
-    g.fillStyle(0x0088bb, 0.7); g.fillCircle(3, 40, 1.8);
-    // 팩 외곽 하이라이트
-    g.lineStyle(1, 0x3a4f6a, 0.8);
-    g.strokeRect(0, 12, 14, 32);
-
-    // ─── 넥링 + 어깨 ─────────────────────────────────────────────
-    // 어깨 갑옷 (왼/위)
-    g.fillStyle(0xa8b8cc); g.fillRect(12, 22, 8, 12);
-    g.fillStyle(0x8898b0); g.fillRect(12, 22, 8, 3);
-    // 넥 링
-    g.fillStyle(0x7888aa); g.fillRect(16, 26, 26, 5);
-    g.fillStyle(0x5a6e88); g.fillRect(18, 27, 22, 2);
-
-    // ─── 헬멧 ─────────────────────────────────────────────────────
-    // 헬멧 아우터 (흰색/연회색)
-    g.fillStyle(0xe0e8f4); g.fillRoundedRect(14, 0, 30, 28, 7);
-    // 헬멧 사이드 패널
-    g.fillStyle(0xc8d4e8); g.fillRect(40, 6, 5, 16);
-    g.fillStyle(0xb8c4d8); g.fillRect(14, 6, 4, 16);
-    // 바이저 프레임
-    g.fillStyle(0x3a4e68); g.fillRoundedRect(17, 6, 24, 18, 4);
-    // 바이저 유리 (어두운 틴트)
-    g.fillStyle(0x060d1e); g.fillRoundedRect(19, 8, 20, 14, 3);
-    // 바이저 반사광 1 (밝은 사선 줄기)
-    g.fillStyle(0xffffff, 0.45); g.fillRect(20, 9, 9, 3);
-    g.fillStyle(0xffffff, 0.25); g.fillRect(21, 12, 6, 2);
-    // 바이저 환경 반사 (희미한 시안 빛)
-    g.fillStyle(0x00aaff, 0.12); g.fillRect(20, 15, 18, 6);
-    // 헬멧 상단 상태 표시등
-    g.fillStyle(0x00ff88); g.fillCircle(28, 2, 2);  // 녹색 = 정상
-    g.fillStyle(0xff4444); g.fillCircle(34, 2, 2);  // 빨강 경고
-    // 안테나
-    g.fillStyle(0xb0bece); g.fillRect(36, -5, 2, 7);
-    g.fillStyle(0xff3333); g.fillCircle(37, -5, 2.5);  // 빨간 불빛
-
-    // ─── 수트 몸통 ────────────────────────────────────────────────
-    // 메인 토르소 (라이트 그레이, 갑옷 패널)
-    g.fillStyle(0xc8d4e4); g.fillRect(14, 30, 30, 24);
-    // 어깨 갑옷 (오른쪽, 위)
-    g.fillStyle(0xb0bece); g.fillRoundedRect(40, 28, 8, 14, 2);
-    g.fillStyle(0xa0aebe); g.fillRect(40, 28, 8, 3);
-    // 흉갑 (체스트 플레이트)
-    g.fillStyle(0x4a6490); g.fillRect(18, 32, 24, 16);
-    // 흉갑 글로우 라인
-    g.fillStyle(0x00ffdd); g.fillRect(18, 42, 24, 2);
-    g.fillStyle(0x00ccaa, 0.6); g.fillRect(18, 44, 24, 1);
-    // 시스템 인디케이터 (흉갑 상단)
-    g.fillStyle(0x00ff88); g.fillRect(19, 33, 4, 4);  // 녹색
-    g.fillStyle(0xffaa00); g.fillRect(25, 33, 4, 4);  // 황색
-    g.fillStyle(0x00aaff); g.fillRect(31, 33, 4, 4);  // 파랑
-    // 인디케이터 레이블 (작은 흰 픽셀)
-    g.fillStyle(0xffffff, 0.5);
-    g.fillRect(20, 34, 2, 2);
-    g.fillRect(26, 34, 2, 2);
-    g.fillRect(32, 34, 2, 2);
-    // 유틸리티 벨트
-    g.fillStyle(0x3a4e68); g.fillRect(14, 52, 30, 5);
-    g.fillStyle(0x2a3a50); g.fillRect(16, 53, 7, 3);  // 파우치
-    g.fillStyle(0x2a3a50); g.fillRect(26, 53, 7, 3);
-    g.fillStyle(0x2a3a50); g.fillRect(36, 53, 5, 3);
-
-    // ─── 오른팔 (가시적) ────────────────────────────────────────
-    g.fillStyle(0xb8c8dc); g.fillRect(42, 32, 10, 12);  // 상완
-    g.fillStyle(0xa8b8cc); g.fillRect(42, 42, 10, 10);  // 하완
-    // 건틀렛 글로우 스트라이프
-    g.fillStyle(0x00ddff); g.fillRect(42, 47, 10, 2);
-    // 건틀렛 (손)
-    g.fillStyle(0x8898b0); g.fillRect(42, 52, 10, 5);
-
-    // ─── 다리 ────────────────────────────────────────────────────
-    g.fillStyle(0xb0bcd0); g.fillRect(16, 57, 10, 10);  // 왼다리
-    g.fillStyle(0xb0bcd0); g.fillRect(30, 57, 10, 10);  // 오른다리
-    // 부트
-    g.fillStyle(0x6878a0); g.fillRect(15, 65, 12, 5);
-    g.fillStyle(0x6878a0); g.fillRect(29, 65, 12, 5);
-    // 부트 밑창
-    g.fillStyle(0x3a4860); g.fillRect(15, 68, 12, 2);
-    g.fillStyle(0x3a4860); g.fillRect(29, 68, 12, 2);
-
-    g.generateTexture('player', 52, 70);
-    g.destroy();
-  }
-
-  // ══ 전자기장 파이프 세그먼트 (90×40) ════════════════════════════════════════
-  _makeEMField() {
-    const g = this.make.graphics({ add: false });
-    const W2 = 90, H2 = 40;
-
-    // 기본 어두운 에너지 베이스
-    g.fillStyle(0x010818); g.fillRect(0, 0, W2, H2);
-
-    // 에너지 그리드 (수평)
-    [8, 16, 24, 32].forEach(y => {
-      g.fillStyle(0x003355, 0.7); g.fillRect(0, y, W2, 1);
-    });
-    // 에너지 그리드 (수직)
-    for (let x = 10; x < W2; x += 14) {
-      g.fillStyle(0x003355, 0.6); g.fillRect(x, 0, 1, H2);
-    }
-
-    // 그리드 교차점 노드
-    [8, 16, 24, 32].forEach(y => {
-      for (let x = 10; x < W2; x += 14) {
-        g.fillStyle(0x0077bb, 0.9); g.fillCircle(x, y, 1.5);
-      }
-    });
-
-    // ─── 상단 엣지 글로우 (가장 중요 - 내부 경계) ─────────────────
-    g.fillStyle(0x00ffff, 0.08); g.fillRect(0, 0, W2, 10);   // 외부 헤일로
-    g.fillStyle(0x00ddff, 0.25); g.fillRect(0, 0, W2, 5);    // 미드 글로우
-    g.fillStyle(0x00ffff, 0.70); g.fillRect(0, 0, W2, 2);    // 밝은 선
-    g.fillStyle(0xffffff, 1.00); g.fillRect(0, 0, W2, 1);    // 흰 엣지
-
-    // ─── 하단 엣지 글로우 ──────────────────────────────────────────
-    g.fillStyle(0x00ffff, 0.08); g.fillRect(0, H2 - 10, W2, 10);
-    g.fillStyle(0x00ddff, 0.25); g.fillRect(0, H2 - 5,  W2, 5);
-    g.fillStyle(0x00ffff, 0.70); g.fillRect(0, H2 - 2,  W2, 2);
-    g.fillStyle(0xffffff, 1.00); g.fillRect(0, H2 - 1,  W2, 1);
-
-    // ─── 좌우 엣지 보라색 글로우 ───────────────────────────────────
-    g.fillStyle(0x9900ff, 0.5); g.fillRect(0,      0, 3, H2);
-    g.fillStyle(0x6600cc, 0.3); g.fillRect(0,      0, 6, H2);
-    g.fillStyle(0x9900ff, 0.5); g.fillRect(W2 - 3, 0, 3, H2);
-    g.fillStyle(0x6600cc, 0.3); g.fillRect(W2 - 6, 0, 6, H2);
-
-    // ─── 에너지 사선 스트리크 ──────────────────────────────────────
-    g.fillStyle(0x00eeff, 0.06); g.fillTriangle(0, 0, 28, 0, 0, H2);
-    g.fillStyle(0xaa00ff, 0.05); g.fillTriangle(W2, 0, W2 - 28, 0, W2, H2);
-
-    // ─── 스캔라인 오버레이 ──────────────────────────────────────────
-    for (let y = 4; y < H2; y += 4) {
-      g.fillStyle(0x000000, 0.12); g.fillRect(0, y, W2, 1);
-    }
-
-    g.generateTexture('pipe_seg', W2, H2);
-    g.destroy();
-
-    // ─── 방출구 노드 텍스처 (파이프 끝 이미터) ─────────────────────
-    const ng = this.make.graphics({ add: false });
-    ng.fillStyle(0x000818); ng.fillCircle(12, 12, 12);
-    ng.fillStyle(0x00aaff, 0.4); ng.fillCircle(12, 12, 10);
-    ng.fillStyle(0x00ffff, 0.7); ng.fillCircle(12, 12, 7);
-    ng.fillStyle(0xffffff, 1.0); ng.fillCircle(12, 12, 4);
-    ng.fillStyle(0x00ffff, 0.3); ng.fillCircle(12, 12, 14);
-    ng.generateTexture('em_node', 24, 24);
-    ng.destroy();
-  }
-
-  _makeThruster() {
-    const g = this.make.graphics({ add: false });
-    g.fillStyle(0x00ddff); g.fillCircle(4, 4, 4);
-    g.generateTexture('thruster', 8, 8);
-    g.destroy();
-  }
-
-  _makeStar() {
-    const g = this.make.graphics({ add: false });
-    g.fillStyle(0xffdd00, 0.3); g.fillCircle(12, 12, 11);
-    g.fillStyle(0xffee44); g.fillPoints(starPoints(12, 12, 10, 4), true);
-    g.fillStyle(0xffffff, 0.85); g.fillCircle(12, 12, 3);
-    g.generateTexture('star', 24, 24);
-    g.destroy();
-  }
-
-  _makeBgDots() {
-    const g1 = this.make.graphics({ add: false });
-    g1.fillStyle(0xffffff); g1.fillCircle(2, 2, 2);
-    g1.generateTexture('bgs', 4, 4); g1.destroy();
-
-    const g2 = this.make.graphics({ add: false });
-    g2.fillStyle(0xaaccff); g2.fillCircle(3, 3, 3);
-    g2.generateTexture('bgm_dot', 6, 6); g2.destroy();
-  }
-
-  _makePlanet() {
-    const g = this.make.graphics({ add: false });
-    g.fillStyle(0x1a3060, 0.35); g.fillCircle(40, 40, 38);
-    g.fillStyle(0x1a3060);       g.fillCircle(40, 40, 32);
-    g.fillStyle(0x2b4880);       g.fillEllipse(32, 30, 38, 22);
-    g.fillStyle(0x243c6a);       g.fillEllipse(50, 50, 26, 14);
-    g.fillStyle(0x6090c0, 0.35); g.fillEllipse(27, 26, 16, 9);
-    g.lineStyle(3, 0x4a70a0, 0.4); g.strokeEllipse(40, 40, 90, 22);
-    g.generateTexture('planet', 80, 80);
-    g.destroy();
+function drawStars(ts) {
+  const seed = 42;
+  for (let i = 0; i < 80; i++) {
+    const t  = (seed * (i + 1) * 1.618) % 1;
+    const t2 = (seed * (i + 1) * 3.141) % 1;
+    const t3 = (seed * (i + 1) * 2.718) % 1;
+    const x  = (t  * canvas.width);
+    const y  = (t2 * canvas.height * 0.7);
+    const r  = 0.5 + t3 * 1.2;
+    const blink = 0.3 + 0.5 * Math.sin(ts * 0.001 * (1 + t3 * 2) + i);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${blink.toFixed(2)})`;
+    ctx.fill();
   }
 }
 
-// ── MenuScene ─────────────────────────────────────────────────────────────────
-class MenuScene extends Phaser.Scene {
-  constructor() { super('Menu'); }
+function drawTunnel() {
+  const v = vp();
+  const floorY = canvas.height - canvas.height * 0.22;
+  const sides  = canvas.width * 0.05;
 
-  create() {
-    this._bgStars = [];
-    this._makeBg();
-    this.sound.stopAll();
+  ctx.strokeStyle = 'rgba(255,40,200,0.18)';
+  ctx.lineWidth   = 1;
 
-    this.add.image(W * 0.82, H * 0.42, 'planet').setScale(1.8).setAlpha(0.45);
+  ctx.beginPath();
+  ctx.moveTo(v.x, v.y);
+  ctx.lineTo(sides, floorY);
+  ctx.stroke();
 
-    // 캐릭터 미리보기 + 글로우
-    const glow = this.add.rectangle(W * 0.15, H * 0.46, 36, 46, 0x00aaff, 0.08);
-    this.tweens.add({ targets: glow, alpha: 0.18, scaleX: 1.1, scaleY: 1.1, duration: 1200, yoyo: true, repeat: -1 });
-    this.add.image(W * 0.15, H * 0.46, 'player').setScale(1.1).setAlpha(0.9);
+  ctx.beginPath();
+  ctx.moveTo(v.x, v.y);
+  ctx.lineTo(canvas.width - sides, floorY);
+  ctx.stroke();
 
-    const title = this.add.text(W / 2, H * 0.18, 'SPACE JUMP', {
-      fontSize: '54px', fontFamily: 'monospace', color: '#00eeff',
-      stroke: '#002244', strokeThickness: 7,
-      shadow: { offsetX: 0, offsetY: 0, color: '#00aaff', blur: 22, fill: true }
-    }).setOrigin(0.5);
+  const topW = canvas.width * 0.35;
+  ctx.beginPath();
+  ctx.moveTo(v.x - topW / 2, v.y);
+  ctx.lineTo(v.x + topW / 2, v.y);
+  ctx.stroke();
+}
 
-    this.add.text(W / 2, H * 0.33, 'EM  FIELD  EDITION', {
-      fontSize: '13px', fontFamily: 'monospace', color: '#446688', letterSpacing: 4,
-    }).setOrigin(0.5);
+function drawFloorGrid() {
+  const floorY = canvas.height - canvas.height * 0.22;
+  const h      = canvas.height - floorY;
 
-    this.add.text(W / 2, H * 0.45, '▶  HOLD to thrust  |  RELEASE to fall', {
-      fontSize: '14px', fontFamily: 'monospace', color: '#7799bb',
-    }).setOrigin(0.5);
-
-    const btn = this.add.text(W / 2, H * 0.60, 'TAP  TO  START', {
-      fontSize: '28px', fontFamily: 'monospace', color: '#ffffff',
-      stroke: '#003366', strokeThickness: 5,
-    }).setOrigin(0.5);
-
-    this.tweens.add({ targets: btn,   alpha: 0.12, duration: 750, yoyo: true, repeat: -1 });
-    this.tweens.add({ targets: title, scaleX: 1.03, scaleY: 1.03, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-    this.add.text(W / 2, H * 0.78, `BEST: ${hi()}`, {
-      fontSize: '18px', fontFamily: 'monospace', color: '#ffcc44',
-    }).setOrigin(0.5);
-
-    const startGame = () => {
-      if (this.sound.context) this.sound.context.resume();
-      if (!this.sound.getAll().some(s => s.isPlaying && s.key === 'bgm'))
-        this.sound.play('bgm', { loop: true, volume: 0.5 });
-      this.sound.play('sfx_start', { volume: 0.75 });
-      this.scene.start('Game');
-    };
-    this.input.once('pointerdown', startGame);
-    this.input.keyboard.once('keydown-SPACE', startGame);
+  ctx.strokeStyle = 'rgba(255,40,200,0.15)';
+  ctx.lineWidth   = 1;
+  const v = vp();
+  const cols = 10;
+  for (let i = 0; i <= cols; i++) {
+    const t  = i / cols;
+    const bx = t * canvas.width;
+    ctx.beginPath();
+    ctx.moveTo(v.x + (bx - v.x) * 0.05, floorY);
+    ctx.lineTo(bx, canvas.height);
+    ctx.stroke();
   }
 
-  _makeBg() {
-    for (let i = 0; i < 150; i++) {
-      const s = this.add.image(
-        Phaser.Math.Between(0, W), Phaser.Math.Between(0, H),
-        Math.random() < 0.75 ? 'bgs' : 'bgm_dot'
-      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.9));
-      s._spd = Phaser.Math.FloatBetween(0.05, 0.28);
-      this._bgStars.push(s);
-    }
+  const rows = 6;
+  for (let i = 0; i <= rows; i++) {
+    const t  = i / rows;
+    const y  = floorY + t * h;
+    const xL = v.x + (0 - v.x) * (1 - t * 0.95);
+    const xR = v.x + (canvas.width - v.x) * (1 - t * 0.95);
+    ctx.globalAlpha = 0.1 + t * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(xL, y);
+    ctx.lineTo(xR, y);
+    ctx.stroke();
   }
+  ctx.globalAlpha = 1;
+}
 
-  update() {
-    this._bgStars.forEach(s => { s.x -= s._spd; if (s.x < -8) s.x = W + 8; });
+function drawWall(depth, label) {
+  const v      = vp();
+  const floorY = canvas.height - canvas.height * 0.22;
+  const sides  = canvas.width * 0.05;
+
+  const t   = 1 - depth;
+  const top = v.y  + (floorY - 80 - v.y)  * t;
+  const bot = v.y  + (floorY - v.y)        * t;
+  const xL  = v.x  + (sides - v.x)         * t;
+  const xR  = v.x  + (canvas.width - sides - v.x) * t;
+
+  const alpha = 0.3 + t * 0.6;
+
+  ctx.fillStyle = `rgba(100,0,120,${(alpha * 0.4).toFixed(2)})`;
+  ctx.beginPath();
+  ctx.moveTo(xL, top);
+  ctx.lineTo(xR, top);
+  ctx.lineTo(xR, bot);
+  ctx.lineTo(xL, bot);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(255,60,220,${alpha.toFixed(2)})`;
+  ctx.lineWidth   = 2 + t * 2;
+  ctx.shadowColor  = '#ff40cc';
+  ctx.shadowBlur   = 8 + t * 16 + getBeatPulse() * 12;
+  ctx.stroke();
+  ctx.shadowBlur   = 0;
+
+  if (depth < 0.8 && label) {
+    const fontSize = Math.round(10 + t * 18);
+    ctx.font      = `700 ${fontSize}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(255,128,238,${(t * 1.2).toFixed(2)})`;
+    ctx.shadowColor = '#ff40cc';
+    ctx.shadowBlur  = 12;
+    ctx.fillText('🎸 ' + label + ' LOCKED', v.x, (top + bot) / 2 + fontSize * 0.35);
+    ctx.shadowBlur  = 0;
   }
 }
 
-// ── GameScene ─────────────────────────────────────────────────────────────────
-class GameScene extends Phaser.Scene {
-  constructor() { super('Game'); }
+async function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-  create() {
-    this._score     = 0;
-    this._alive     = true;
-    this._speed     = 160;
-    this._gap       = 210;
-    this._dist      = 0;
-    this._nextPipe  = 3000;
-    this._elapsed   = 0;
-    this._pairList  = [];  // 전자기장 아크 추적용
+  const startTime = audioCtx.currentTime + 0.3;
 
-    if (this.sound.context) this.sound.context.resume();
-    if (!this.sound.getAll().some(s => s.isPlaying && s.key === 'bgm'))
-      this.sound.play('bgm', { loop: true, volume: 0.5 });
+  const buffers = await Promise.all(
+    STEMS.map(s => fetch(s.file).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b)))
+  );
 
-    // 배경
-    this._bgLayers = [];
-    this._makeBgLayers();
-    this._planet = this.add.image(
-      Phaser.Math.Between(W * 0.55, W * 0.92),
-      Phaser.Math.Between(H * 0.08, H * 0.88), 'planet'
-    ).setAlpha(0.28).setScale(Phaser.Math.FloatBetween(0.6, 1.6));
+  buffers.forEach((buf, i) => {
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(STEMS[i].startGain, audioCtx.currentTime);
+    gain.connect(audioCtx.destination);
+    gainNodes[i] = gain;
 
-    // 아크/번개 그래픽스 레이어
-    this._arcGraphics = this.add.graphics().setDepth(7);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.loop   = true;
+    src.connect(gain);
+    src.start(startTime);
+  });
 
-    // 물리 그룹
-    this._pipes = this.physics.add.group({ allowGravity: false });
-    this._stars = this.physics.add.group({ allowGravity: false });
+  audioReady = true;
+}
 
-    // 플레이어
-    this._player = this.physics.add.image(W * 0.22, H * 0.5, 'player').setScale(0.5).setDepth(10);
-    this._player.body.gravity.y = 420;
-    this._player.body.maxVelocityY = 370;
+function unlockStem(index) {
+  if (!audioCtx || index >= gainNodes.length) return;
+  gainNodes[index].gain.linearRampToValueAtTime(1, audioCtx.currentTime + UNLOCK_RAMP);
+}
 
-    // 제트팩 파티클 (시안 + 파랑 믹스)
-    this._emitter = this.add.particles(0, 0, 'thruster', {
-      angle:    { min: 150, max: 210 },
-      speed:    { min: 60, max: 130 },
-      scale:    { start: 1.1, end: 0 },
-      alpha:    { start: 1,   end: 0 },
-      tint:     [0x00ffff, 0x0066ff, 0x00aaff, 0x00eebb, 0xffffff],
-      lifespan: 200,
-      frequency: 20,
-      emitting:  false,
-    }).setDepth(9);
+function drawChargeBar() {
+  if (scene !== SCENE.PLAYING) return;
+  const barW = canvas.width * 0.5;
+  const barH = 4;
+  const x    = (canvas.width - barW) / 2;
+  const y    = canvas.height - CHAR_H - charOffsetY - 20; // just above character
 
-    // 제트팩 사운드
-    this._thrustSnd = this.sound.add('sfx_thrust', { loop: true, volume: 0.3 });
+  ctx.fillStyle = 'rgba(255,40,200,0.12)';
+  ctx.fillRect(x, y, barW, barH);
 
-    // HUD
-    this._scoreTxt = this.add.text(14, 12, 'SCORE: 0', {
-      fontSize: '20px', fontFamily: 'monospace', color: '#00eeff',
-      stroke: '#000820', strokeThickness: 4,
-    }).setDepth(20);
-
-    this._diffTxt = this.add.text(W - 14, 12, 'EASY', {
-      fontSize: '14px', fontFamily: 'monospace', color: '#3a5568',
-    }).setDepth(20).setOrigin(1, 0);
-
-    // EM 필드 상태 표시 (우상단)
-    this._emTxt = this.add.text(W - 14, 32, '⚡ EM FIELD ACTIVE', {
-      fontSize: '11px', fontFamily: 'monospace', color: '#00ddff',
-    }).setDepth(20).setOrigin(1, 0);
-    this.tweens.add({ targets: this._emTxt, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-
-    // 충돌
-    this.physics.add.overlap(this._player, this._pipes, this._die,     null, this);
-    this.physics.add.overlap(this._player, this._stars, this._getStar, null, this);
-
-    // 입력
-    this._holding = false;
-    this.input.on('pointerdown', () => { this._holding = true; });
-    this.input.on('pointerup',   () => { this._holding = false; });
-    this._space = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-  }
-
-  _makeBgLayers() {
-    [
-      { n: 90, spd: 0.12, key: 'bgs',     aRange: [0.12, 0.40] },
-      { n: 45, spd: 0.32, key: 'bgs',     aRange: [0.35, 0.70] },
-      { n: 20, spd: 0.65, key: 'bgm_dot', aRange: [0.45, 0.95] },
-    ].forEach(d => {
-      for (let i = 0; i < d.n; i++) {
-        const s = this.add.image(
-          Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), d.key
-        ).setAlpha(Phaser.Math.FloatBetween(...d.aRange));
-        s._spd = d.spd;
-        this._bgLayers.push(s);
-      }
-    });
-  }
-
-  _spawnPipe() {
-    const margin = Math.ceil(this._gap / 2) + 28;
-    const gapY   = Phaser.Math.Between(margin, H - margin);
-    const topH   = gapY - this._gap / 2;
-    const botH   = H - gapY - this._gap / 2;
-    const x      = W + 55;
-
-    const mkPipe = (y, h, oy) => {
-      const h2   = Math.max(h, 4);
-      const pipe = this.add.tileSprite(x, y, 90, h2, 'pipe_seg').setOrigin(0.5, oy);
-      this.physics.add.existing(pipe, false);
-      pipe.body.allowGravity = false;
-      pipe.body.setVelocityX(-this._speed);
-      pipe.body.setSize(82, h2);
-      this._pipes.add(pipe);
-      // 파이프 스폰 시 펄스 트윈
-      this.tweens.add({
-        targets: pipe, alpha: { from: 0, to: 1 }, duration: 300, ease: 'Quad.easeOut'
-      });
-      return pipe;
-    };
-
-    const top     = mkPipe(0, topH, 0);
-    top._primary  = true;
-    top._scored   = false;
-    const bot     = mkPipe(H, botH, 1);
-
-    // EM 이미터 노드 (파이프 내부 경계)
-    const nodeTop = this.add.image(x, topH,     'em_node').setDepth(6).setAlpha(0.9);
-    const nodeBot = this.add.image(x, H - botH, 'em_node').setDepth(6).setAlpha(0.9);
-
-    // 노드 펄스 트윈
-    [nodeTop, nodeBot].forEach(nd => {
-      this.tweens.add({ targets: nd, scaleX: 1.3, scaleY: 1.3, alpha: 1.0, duration: 350, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    });
-
-    // 페어 정보 저장 (아크 드로잉용)
-    this._pairList.push({ top, bot, nodeTop, nodeBot, gapTop: topH, gapBot: H - botH });
-
-    // 별 수집물
-    if (Math.random() < 0.60) {
-      const sy = Phaser.Math.Between(gapY - ~~(this._gap * 0.28), gapY + ~~(this._gap * 0.28));
-      const st = this.physics.add.image(x, sy, 'star').setDepth(5);
-      st.body.allowGravity = false;
-      st.body.setVelocityX(-this._speed);
-      this._stars.add(st);
-      this.tweens.add({ targets: st, y: sy - 9, duration: 580, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    }
-  }
-
-  // 전자기장 번개 아크 드로우
-  _drawArc(x, gapTop, gapBot) {
-    const g   = this._arcGraphics;
-    const t   = this._elapsed;
-
-    // 시간 기반 색상 사이클
-    const cycle = (Math.sin(t * 0.006) + 1) * 0.5;
-    const cA    = 0x00ffff;  // 시안
-    const cB    = 0xaa00ff;  // 보라
-
-    for (let arc = 0; arc < 3; arc++) {
-      const alpha = [0.9, 0.55, 0.3][arc];
-      const lw    = [2,   1.5,  1  ][arc];
-      const noise = [14,  20,   26  ][arc];
-      const col   = arc === 0 ? cA : (arc === 1 ? cB : 0xffffff);
-
-      g.lineStyle(lw, col, alpha);
-      g.beginPath();
-      g.moveTo(x, gapTop);
-
-      const segments = Phaser.Math.Between(5, 9);
-      for (let i = 1; i <= segments; i++) {
-        const ty  = gapTop + (gapBot - gapTop) * (i / segments);
-        const ox  = (Math.random() - 0.5) * noise * 2;
-        g.lineTo(x + ox, ty);
-      }
-      g.strokePath();
-    }
-
-    // 이미터 노드 글로우 (아크 그래픽스에 직접)
-    g.fillStyle(0xffffff, 0.9); g.fillCircle(x, gapTop, 3.5);
-    g.fillStyle(0x00ffff, 0.5); g.fillCircle(x, gapTop, 8);
-    g.fillStyle(0xffffff, 0.9); g.fillCircle(x, gapBot, 3.5);
-    g.fillStyle(0x00ffff, 0.5); g.fillCircle(x, gapBot, 8);
-  }
-
-  _getStar(_, star) {
-    const { x, y } = star;
-    star.destroy();
-    this._score += 3;
-    this._scoreTxt.setText(`SCORE: ${this._score}`);
-    this.sound.play('sfx_collect', { volume: Phaser.Math.FloatBetween(0.6, 0.9), rate: Phaser.Math.FloatBetween(0.85, 1.25) });
-    const lbl = this.add.text(x, y - 6, '+3', {
-      fontSize: '16px', fontFamily: 'monospace', color: '#ffee44',
-    }).setDepth(30);
-    this.tweens.add({ targets: lbl, y: y - 42, alpha: 0, duration: 560, onComplete: () => lbl.destroy() });
-  }
-
-  _die() {
-    if (!this._alive) return;
-    this._alive = false;
-    this._emitter.stop();
-    if (this._thrustSnd.isPlaying) this._thrustSnd.stop();
-    this.sound.play('sfx_hit', { volume: 0.95 });
-    this.cameras.main.shake(300, 0.014);
-    this.cameras.main.flash(200, 90, 30, 130);
-    this.tweens.add({
-      targets: this._player, alpha: 0, angle: 220, scaleX: 2.3, scaleY: 2.3,
-      duration: 400,
-      onComplete: () => {
-        const best = Math.max(this._score, hi());
-        setHi(best);
-        this.scene.start('GameOver', { score: this._score, best });
-      }
-    });
-  }
-
-  _diffLabel() {
-    const s = this._speed;
-    if (s < 200) return 'EASY';
-    if (s < 245) return 'NORMAL';
-    if (s < 285) return 'HARD';
-    return '⚡INSANE';
-  }
-
-  update(_, delta) {
-    if (!this._alive) return;
-
-    const dt = delta / 1000;
-    this._elapsed += delta;
-    this._dist    += this._speed * dt;
-
-    // 배경 스크롤
-    this._bgLayers.forEach(s => {
-      s.x -= s._spd * this._speed * dt * 0.40;
-      if (s.x < -8) s.x = W + 8;
-    });
-    this._planet.x -= this._speed * dt * 0.015;
-    if (this._planet.x < -120) {
-      this._planet.x = W + 120;
-      this._planet.y = Phaser.Math.Between(H * 0.08, H * 0.88);
-    }
-
-    // 추력
-    const thrust = this._holding || this._space.isDown;
-    if (thrust) {
-      this._player.body.velocity.y = Math.max(this._player.body.velocity.y - 840 * dt, -252);
-    }
-
-    // 제트팩 사운드
-    if (thrust && !this._thrustSnd.isPlaying) this._thrustSnd.play();
-    if (!thrust && this._thrustSnd.isPlaying)  this._thrustSnd.stop();
-
-    // 파티클
-    this._emitter.setPosition(this._player.x - 10, this._player.y + 8);
-    if (thrust && !this._emitter.emitting)  this._emitter.start();
-    if (!thrust && this._emitter.emitting) this._emitter.stop();
-
-    // 기울기 (수트 기준으로 자연스럽게)
-    this._player.angle = Phaser.Math.Clamp(this._player.body.velocity.y * 0.055, -22, 36);
-
-    // 화면 경계
-    if (this._player.y <= 4 || this._player.y >= H - 4) { this._die(); return; }
-
-    // ─── 전자기장 색상 사이클 ──────────────────────────────────────
-    const t   = this._elapsed;
-    const sin = (Math.sin(t * 0.0025) + 1) * 0.5;
-    const r   = ~~Phaser.Math.Linear(0,   180, sin);
-    const gv  = ~~Phaser.Math.Linear(220,  60, sin);
-    const b   = 255;
-    const tintColor = Phaser.Display.Color.GetColor(r, gv, b);
-    this._pipes.getChildren().forEach(p => { if (p.active) p.setTint(tintColor); });
-
-    // ─── 번개 아크 그리기 ──────────────────────────────────────────
-    this._arcGraphics.clear();
-    // 쓸모없는 페어 제거
-    this._pairList = this._pairList.filter(pair => pair.top.active);
-    this._pairList.forEach(pair => {
-      const px = pair.top.x;
-      if (px < -60 || px > W + 80) return;
-      // 페어의 EM 노드 이동
-      pair.nodeTop.x = px;
-      pair.nodeBot.x = px;
-      // 아크 드로우 (파이프 우측 엣지 - 갭 입구)
-      this._drawArc(px + 45, pair.gapTop, pair.gapBot);
-    });
-
-    // 파이프 스폰
-    this._nextPipe -= delta;
-    if (this._nextPipe <= 0) {
-      this._spawnPipe();
-      const base = Math.max(2100 - this._dist * 0.025, 1200);
-      this._nextPipe = Phaser.Math.Between(~~(base * 0.88), ~~(base * 1.12));
-    }
-
-    // 파이프 업데이트
-    this._pipes.getChildren().forEach(p => {
-      if (!p.body) return;
-      p.body.setVelocityX(-this._speed);
-      if (p.x < -120) { p.destroy(); return; }
-      if (p._primary && !p._scored && p.x + 45 < this._player.x) {
-        p._scored = true;
-        this._score += 1;
-        this._scoreTxt.setText(`SCORE: ${this._score}`);
-        this.sound.play('sfx_score', { volume: 0.55 });
-      }
-    });
-
-    // 별 업데이트
-    this._stars.getChildren().forEach(s => {
-      if (s.body) s.body.setVelocityX(-this._speed);
-      if (s.x < -50) s.destroy();
-    });
-
-    // 난이도
-    this._speed = Math.min(160 + this._dist * 0.011, 310);
-    this._gap   = Math.max(210 - this._dist * 0.004, 160);
-    this._diffTxt.setText(this._diffLabel());
+  const fillW = barW * chargeLevel;
+  if (fillW >= 1) {
+    const grd = ctx.createLinearGradient(x, 0, x + barW, 0);
+    grd.addColorStop(0, '#ff9900');
+    grd.addColorStop(1, '#ff5500');
+    ctx.fillStyle = grd;
+    ctx.shadowColor = '#ff9900';
+    ctx.shadowBlur  = 6;
+    ctx.fillRect(x, y, fillW, barH);
+    ctx.shadowBlur = 0;
   }
 }
 
-// ── GameOverScene ─────────────────────────────────────────────────────────────
-class GameOverScene extends Phaser.Scene {
-  constructor() { super('GameOver'); }
-  init(data) { this._score = data.score || 0; this._best = data.best || 0; }
+function drawTitle() {
+  const cx = canvas.width / 2;
+  const cy = canvas.height * 0.42;
 
-  create() {
-    this.add.rectangle(W/2, H/2, W, H, 0x000012, 0.8);
-    for (let i = 0; i < 100; i++) {
-      this.add.image(
-        Phaser.Math.Between(0, W), Phaser.Math.Between(0, H),
-        Math.random() < 0.75 ? 'bgs' : 'bgm_dot'
-      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.65));
-    }
+  ctx.textAlign   = 'center';
+  ctx.font        = `300 ${Math.round(canvas.width * 0.06)}px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.fillStyle   = 'rgba(255,230,180,0.9)';
+  ctx.shadowColor = '#ffaa40';
+  ctx.shadowBlur  = 20;
+  ctx.fillText('i am thinking of you', cx, cy);
 
-    const isNew = this._score > 0 && this._score >= this._best;
+  ctx.font      = `400 ${Math.round(canvas.width * 0.035)}px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.fillStyle = 'rgba(200,150,80,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fillText('150 BPM', cx, cy + canvas.width * 0.08);
 
-    // 캐릭터 (tilted)
-    this.add.image(W/2, H * 0.16, 'player').setScale(1.0).setAlpha(0.75).setAngle(18);
+  const blink = 0.4 + 0.4 * Math.sin(performance.now() * 0.003);
+  ctx.font      = `400 ${Math.round(canvas.width * 0.032)}px 'Helvetica Neue', Arial, sans-serif`;
+  ctx.fillStyle = `rgba(255,160,40,${blink.toFixed(2)})`;
+  ctx.shadowBlur = 6;
+  ctx.fillText('hold to begin', cx, cy + canvas.width * 0.19);
+  ctx.shadowBlur = 0;
+}
 
-    const go = this.add.text(W/2, H*0.32, 'GAME  OVER', {
-      fontSize: '44px', fontFamily: 'monospace', color: '#ff4466',
-      stroke: '#220011', strokeThickness: 6,
-    }).setOrigin(0.5);
-    this.tweens.add({ targets: go, scaleX: 1.06, scaleY: 1.06, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+function drawFinale(ts) {
+  const cx      = canvas.width / 2;
+  const elapsed = (performance.now() - finaleStart) / 1000;
 
-    this.add.text(W/2, H*0.50, `SCORE   ${this._score}`, {
-      fontSize: '34px', fontFamily: 'monospace', color: '#00eeff',
-    }).setOrigin(0.5);
+  // Expanding warm light rings
+  for (let i = 0; i < 5; i++) {
+    const phase = (elapsed * 0.7 + i * 0.4) % 3;
+    const t     = phase / 3;
+    const r     = t * canvas.width * 0.9;
+    const alpha = (1 - t) * 0.3;
+    ctx.beginPath();
+    ctx.arc(cx, canvas.height * 0.5, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,180,60,${alpha.toFixed(2)})`;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = '#ffaa30';
+    ctx.shadowBlur  = 20;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+  }
 
-    this.add.text(W/2, H*0.62,
-      isNew ? `✦  NEW  BEST :  ${this._best}  ✦` : `BEST:  ${this._best}`, {
-      fontSize: '20px', fontFamily: 'monospace',
-      color: isNew ? '#ffee00' : '#445566',
-    }).setOrigin(0.5);
+  // Fade-in text after 1.5s
+  const textAlpha = Math.min(Math.max((elapsed - 1.5) / 1.5, 0), 1);
+  if (textAlpha > 0) {
+    ctx.textAlign   = 'center';
+    ctx.font        = `300 ${Math.round(canvas.width * 0.06)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle   = `rgba(255,230,180,${textAlpha.toFixed(2)})`;
+    ctx.shadowColor = '#ffaa40';
+    ctx.shadowBlur  = 24;
+    ctx.fillText('i am thinking of you', cx, canvas.height * 0.38);
 
-    const btn = this.add.text(W/2, H*0.76, '▶   TAP TO PLAY AGAIN', {
-      fontSize: '22px', fontFamily: 'monospace', color: '#ffffff',
-      stroke: '#003355', strokeThickness: 4,
-    }).setOrigin(0.5);
-    this.tweens.add({ targets: btn, alpha: 0.12, duration: 750, yoyo: true, repeat: -1 });
-
-    this.add.text(W/2, H*0.88, 'M = menu', {
-      fontSize: '12px', fontFamily: 'monospace', color: '#2a3f55',
-    }).setOrigin(0.5);
-
-    this.input.once('pointerdown',        () => this.scene.start('Game'));
-    this.input.keyboard.once('keydown-SPACE', () => this.scene.start('Game'));
-    this.input.keyboard.once('keydown-M',     () => this.scene.start('Menu'));
+    ctx.font      = `400 ${Math.round(canvas.width * 0.034)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(200,160,100,${textAlpha.toFixed(2)})`;
+    ctx.shadowBlur = 10;
+    ctx.fillText('thank you', cx, canvas.height * 0.38 + canvas.width * 0.1);
+    ctx.shadowBlur = 0;
   }
 }
 
-// ── Launch ────────────────────────────────────────────────────────────────────
-new Phaser.Game({
-  type: Phaser.AUTO,
-  width: W, height: H,
-  backgroundColor: '#00000c',
-  physics: { default: 'arcade', arcade: { debug: false } },
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [BootScene, MenuScene, GameScene, GameOverScene],
+function drawStemDots() {
+  const total  = STEMS.length;
+  const dotR   = 4;
+  const gap    = 14;
+  const totalW = total * (dotR * 2) + (total - 1) * (gap - dotR * 2);
+  let x = (canvas.width - totalW) / 2;
+  const y = 18;
+
+  for (let i = 0; i < total; i++) {
+    const on = i < unlockedDots;
+    ctx.beginPath();
+    ctx.arc(x + dotR, y, dotR, 0, Math.PI * 2);
+    if (on) {
+      ctx.fillStyle   = '#ff9900';
+      ctx.shadowColor = '#ff9900';
+      ctx.shadowBlur  = 8;
+    } else {
+      ctx.fillStyle  = 'rgba(120,60,0,0.25)';
+      ctx.shadowBlur = 0;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (!on) {
+      ctx.strokeStyle = 'rgba(180,90,0,0.3)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+
+    x += gap;
+  }
+}
+
+function captureCharFrame() {
+  if (!charImg.complete || charImg.naturalWidth === 0) return false;
+  offCtx.clearRect(0, 0, 320, 320);
+  offCtx.drawImage(charImg, 0, 0, 320, 320);
+  // Remove teal background: min(G,B)-R > 90 cleanly separates bright teal
+  // (diff ~150+) from character's blue clothing (diff ~60)
+  try {
+    const imageData = offCtx.getImageData(0, 0, 320, 320);
+    const d = imageData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (Math.min(g, b) - r > 90) d[i + 3] = 0;
+    }
+    offCtx.putImageData(imageData, 0, 0);
+  } catch(e) { /* canvas taint — draw raw */ }
+  return true;
+}
+
+function positionCharacter() {
+  if (!charImg.complete || charImg.naturalWidth === 0) return;
+
+  // Capture first frame once; re-capture only during action states (animated)
+  const isAction = scene === SCENE.BREAKING || scene === SCENE.WALKING ||
+                   waveRings.length > 0;
+  if (!charFrameFrozen) {
+    if (captureCharFrame()) charFrameFrozen = true;
+    else return;
+  } else if (isAction) {
+    captureCharFrame();
+  }
+
+  const centerX = canvas.width / 2;
+  const size    = 200 + chargeLevel * 12;
+  const drawX   = centerX - size / 2;
+  // Character sits at very bottom, clearly below the wall
+  const drawY   = canvas.height - size - charOffsetY;
+
+  ctx.save();
+  try {
+    // Background is now transparent — plain source-over works
+    const scale = 1 + chargeLevel * 0.05;
+    ctx.translate(centerX, drawY + size * 0.5);
+    ctx.scale(scale, scale);
+    ctx.translate(-centerX, -(drawY + size * 0.5));
+    ctx.drawImage(offCanvas, drawX, drawY, size, size);
+  } finally {
+    ctx.restore();
+  }
+}
+
+function drawCharacterGlow() {
+  if (chargeLevel < 0.05) return;
+  const floorY  = canvas.height - canvas.height * 0.22;
+  const centerX = canvas.width / 2;
+  const charY   = floorY - 200 * 0.5 - charOffsetY; // centre of character
+  const r = 40 + chargeLevel * 120;
+  const grd = ctx.createRadialGradient(centerX, charY, 0, centerX, charY, r);
+  grd.addColorStop(0,   `rgba(255,180,80,${(chargeLevel * 0.5).toFixed(2)})`);
+  grd.addColorStop(1,   'rgba(255,140,40,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.ellipse(centerX, charY, r, r * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function update(dt, ts) {
+  // Charge
+  if (isHolding && scene === SCENE.PLAYING) {
+    chargeLevel = Math.min((performance.now() - chargeStart) / 2000, 1);
+  } else if (!isHolding) {
+    chargeLevel = Math.max(0, chargeLevel - dt * 3);
+  }
+
+  // Wall approach — stops at 0.15 so it hovers above the character
+  if (scene === SCENE.PLAYING && wallDepth > 0.15) {
+    wallDepth = Math.max(0.15, wallDepth - dt * 0.28);
+  }
+
+  // Walk animation: character moves forward (up-screen) over 800ms
+  if (scene === SCENE.WALKING) {
+    const walkDur = 0.8;
+    const t = Math.min((performance.now() - walkStart) / 1000 / walkDur, 1);
+    charOffsetY = easeInOut(t) * 40;
+
+    if (t >= 1) {
+      charOffsetY = 0;
+      currentWall++;
+      if (currentWall >= STEMS.length - 1) {
+        startFinale();
+      } else {
+        scene     = SCENE.PLAYING;
+        wallDepth = 0.85;
+      }
+    }
+  }
+}
+
+function draw(ts) {
+  ctx.globalCompositeOperation = 'source-over'; // reset in case positionCharacter errored
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  drawStars(ts);
+
+  if (scene === SCENE.TITLE) {
+    drawTunnel();
+    drawFloorGrid();
+    positionCharacter();
+    drawTitle();
+    drawStemDots();
+    return;
+  }
+
+  drawTunnel();
+  drawFloorGrid();
+
+  if (scene === SCENE.PLAYING || scene === SCENE.BREAKING) {
+    const label = currentWall < STEMS.length - 1 ? STEMS[currentWall + 1].label : null;
+    drawWall(wallDepth, label);
+  }
+
+  drawWaves(ts);
+  drawChargeBar();
+  positionCharacter();
+  drawParticles(frameDt);
+
+  // "Hold to fire" hint once wall has arrived
+  if (scene === SCENE.PLAYING && wallDepth <= 0.16 && chargeLevel < 0.05) {
+    const blink = 0.4 + 0.4 * Math.sin(performance.now() * 0.004);
+    ctx.textAlign = 'center';
+    ctx.font = `400 ${Math.round(canvas.width * 0.038)}px 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(255,160,40,${blink.toFixed(2)})`;
+    ctx.shadowColor = '#ff9900';
+    ctx.shadowBlur = 8;
+    ctx.fillText('hold to fire', canvas.width / 2, canvas.height * 0.88);
+    ctx.shadowBlur = 0;
+  }
+
+  if (flashAlpha > 0) {
+    ctx.fillStyle = `rgba(255,220,180,${flashAlpha.toFixed(2)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    flashAlpha = Math.max(0, flashAlpha - 0.04);
+  }
+
+  if (scene === SCENE.FINALE) {
+    drawFinale(ts);
+    positionCharacter();
+  }
+
+  drawStemDots();
+}
+
+function drawWaves(ts) {
+  const centerX = canvas.width / 2;
+  const originY = canvas.height - CHAR_H * 0.7; // waves burst from character centre
+
+  waveRings = waveRings.filter(w => {
+    const elapsed = (ts - w.startTs) / 1000;
+    const t       = Math.min(elapsed / w.duration, 1);
+    if (t >= 1) return false;
+
+    const size   = w.size0 + t * w.maxSize;
+    const alpha  = (1 - t) * 0.8;
+    const y      = originY - t * (originY - vp().y - 20);
+
+    ctx.save();
+    ctx.translate(centerX, y);
+    ctx.scale(1, 0.35);
+    ctx.beginPath();
+    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,180,60,${alpha.toFixed(2)})`;
+    ctx.lineWidth   = 2 + w.power * 2;
+    ctx.shadowColor = '#ffb030';
+    ctx.shadowBlur  = 10;
+    ctx.stroke();
+    ctx.restore();
+
+    return true;
+  });
+}
+
+function fireWave() {
+  // Compute power from actual hold time so quick taps still register
+  const heldMs = isHolding ? (performance.now() - chargeStart) : 0;
+  const power  = Math.max(chargeLevel, Math.min(heldMs / 2000, 1), 0.15);
+  chargeLevel  = 0;
+
+  const ts = performance.now();
+  for (let i = 0; i < 3; i++) {
+    waveRings.push({
+      startTs:  ts + i * 120,
+      duration: 0.7 + power * 0.6,
+      size0:    20,
+      maxSize:  60 + power * 200,
+      power,
+    });
+  }
+  // Always break — wave travels and hits wall regardless of distance
+  setTimeout(() => breakWall(power), 350);
+}
+
+function spawnParticles(power) {
+  const v      = vp();
+  const count  = Math.round(20 + power * 30);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 200 * power;
+    particles.push({
+      x:    v.x,
+      y:    v.y + 40,
+      vx:   Math.cos(angle) * speed,
+      vy:   Math.sin(angle) * speed,
+      life: 1,
+      size: 2 + Math.random() * 4,
+      hue:  280 + Math.random() * 60,
+    });
+  }
+}
+
+function drawParticles(dt) {
+  particles = particles.filter(p => {
+    p.x    += p.vx * dt;
+    p.y    += p.vy * dt;
+    p.vy   += 120 * dt;
+    p.life -= dt * 1.5;
+    if (p.life <= 0) return false;
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue},100%,70%,${p.life.toFixed(2)})`;
+    ctx.shadowColor = `hsl(${p.hue},100%,70%)`;
+    ctx.shadowBlur  = 6;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+    return true;
+  });
+}
+
+function breakWall(power) {
+  if (scene !== SCENE.PLAYING) return;
+  scene = SCENE.BREAKING;
+
+  flashAlpha = 0.6 + power * 0.4;
+  spawnParticles(power);
+
+  const stemIndex = currentWall + 1;
+  unlockStem(stemIndex);
+  unlockedDots = stemIndex + 1;
+
+  setTimeout(() => startWalk(), 1200);
+}
+
+function startWalk() {
+  scene = SCENE.WALKING;
+  walkStart = performance.now();
+}
+
+function startFinale() {
+  scene       = SCENE.FINALE;
+  finaleStart = performance.now();
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function getBeatPulse() {
+  if (!audioCtx) return 0;
+  const beat  = (audioCtx.currentTime % BEAT_S) / BEAT_S;
+  return beat < 0.15 ? (1 - beat / 0.15) : 0;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  // Fire-and-forget audio init — never block the game loop
+  if (!audioStarted) {
+    audioStarted = true;
+    initAudio().catch(err => console.warn('Audio init failed:', err));
+  }
+  if (scene === SCENE.TITLE) {
+    scene     = SCENE.PLAYING;
+    wallDepth = 0.85;
+    return;
+  }
+  if (scene !== SCENE.PLAYING) return;
+  isHolding   = true;
+  chargeStart = performance.now();
 });
+
+canvas.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  if (!isHolding || scene !== SCENE.PLAYING) return;
+  isHolding = false;
+  fireWave();
+});
+
+canvas.addEventListener('pointerleave', () => {
+  if (isHolding) { isHolding = false; fireWave(); }
+});
+
+let audioStarted = false;
+scene = SCENE.TITLE;
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
