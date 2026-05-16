@@ -477,6 +477,8 @@ function update(dt, ts) {
 
 function draw(ts) {
   ctx.globalCompositeOperation = 'source-over'; // reset in case positionCharacter errored
+  ctx.globalAlpha = 1;                          // reset in case drawFloorGrid errored
+  ctx.shadowBlur  = 0;                          // reset shadow state
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBackground();
   drawStars(ts);
@@ -535,10 +537,10 @@ function drawWaves(ts) {
 
   waveRings = waveRings.filter(w => {
     const elapsed = (ts - w.startTs) / 1000;
-    const t       = Math.min(elapsed / w.duration, 1);
+    const t       = Math.min(Math.max(elapsed / w.duration, 0), 1);
     if (t >= 1) return false;
 
-    const size   = w.size0 + t * w.maxSize;
+    const size   = Math.max(1, w.size0 + t * w.maxSize);
     const alpha  = (1 - t) * 0.8;
     const y      = originY - t * (originY - vp().y - 20);
 
